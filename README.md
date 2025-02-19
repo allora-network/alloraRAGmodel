@@ -4,7 +4,7 @@
 We are creating a RAG Chatbot that runs on GPT-4 and answers questions about Allora labs, pulling from information provided by:
 
 - Major research papers:
-  - [Alora White Paper](https://www.allora.network/research/optimizing-decentralized-online-learning-for-supervised-regression-and-classification-problems)
+  - [Allora White Paper](https://www.allora.network/research/optimizing-decentralized-online-learning-for-supervised-regression-and-classification-problems)
   - [Merit-based sortition in Decentralized Systems](https://www.allora.network/research/merit-based-sortition-in-decentralized-systems)
   - [Optimizing Decentralized Online Learning for Supervised Regression and Classification Problems](https://www.allora.network/research/optimizing-decentralized-online-learning-for-supervised-regression-and-classification-problems)
 
@@ -66,12 +66,6 @@ vector_store = PineconeVectorStore.from_documents(
     split_docs,
     embedding=embeddings,
     index_name="alloraproduction"
-
-
-Notes
-The chunk_size and chunk_overlap are hyperparameters that are set depending on how detailed you want the data to be represented when it gets searched.
-After completing this step and putting our new data embeddings into our Pinecone database, it will automatically pull from new information.
-)
 
 pc = Pinecone(api_key=os.getenv("PINECONE_API_KEY"))
 index = pc.Index("alloraproduction")
