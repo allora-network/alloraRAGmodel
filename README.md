@@ -1,5 +1,10 @@
 # How to update the knowledge base of the Allora information agent?
 
+## Description
+
+We are creating a RAG Chatbot that runs on GPT-4 and answers questions about Allora labs, pulling from information provided by our docs, research papers, and part of our codebase. This bot should run on Slack, discord, and our doc website page.
+
+
 ### Overview
 
 We instantiated a Pinecone vector database under the name **`alloraproduction`** within the Q&A chat project. Within the database, we have vectorized our data using the **OpenAI text-embedding-3-large** model, resulting in a database of **3072-dimensional vectors**.
