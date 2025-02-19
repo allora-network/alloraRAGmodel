@@ -12,7 +12,8 @@ We are creating a RAG Chatbot that runs on GPT-4 and answers questions about All
   - [chain](https://github.com/allora-network/allora-chain)
   - [off-chain](https://github.com/allora-network/allora-offchain-node)
   - [coin prediction worker](https://github.com/allora-network/basic-coin-prediction-node)
-  - [coin prediction reputer]()
+  - [coin prediction reputer](https://github.com/allora-network/coin-prediction-reputer)
+  - autogluon-prediction
 
 
 - Cosmos docs:
