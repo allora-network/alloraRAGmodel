@@ -1,8 +1,27 @@
-# How to update the knowledge base of the Allora information agent?
 
 ## Description
 
-We are creating a RAG Chatbot that runs on GPT-4 and answers questions about Allora labs, pulling from information provided by our docs, research papers, and part of our codebase. This bot should run on Slack, discord, and our doc website page.
+We are creating a RAG Chatbot that runs on GPT-4 and answers questions about Allora labs, pulling from information provided by:
+
+- Major research papers:
+  - Alora White Paper
+  - Merit-based sortition in Decentralized Systems
+  - Optimizing Decentralized Online Learning for Supervised Regression and Classification Problems
+
+- Major repos/readmes:
+  - chain
+  - off-chain
+  - coin prediction worker
+  - coin prediction reputer
+
+- Docs:
+  - Cosmos docs:
+    - [https://docs.cosmos.network/v0.50/build/modules/gov](https://docs.cosmos.network/v0.50/build/modules/gov)
+    - [https://docs.cometbft.com/v0.38/](https://docs.cometbft.com/v0.38/)
+
+This bot should run on Slack, discord, and our doc website page.
+
+# How to update the knowledge base of the Allora information agent?
 
 
 ### Overview
