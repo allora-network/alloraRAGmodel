@@ -6,19 +6,19 @@ We are creating a RAG Chatbot that runs on GPT-4 and answers questions about All
 - Major research papers:
   - [Alora White Paper](https://www.allora.network/research/optimizing-decentralized-online-learning-for-supervised-regression-and-classification-problems)
   - [Merit-based sortition in Decentralized Systems](https://www.allora.network/research/merit-based-sortition-in-decentralized-systems)
-  - [Optimizing Decentralized Online Learning for Supervised Regression and Classification Problems]((https://www.allora.network/research/optimizing-decentralized-online-learning-for-supervised-regression-and-classification-problems))
+  - [Optimizing Decentralized Online Learning for Supervised Regression and Classification Problems](https://www.allora.network/research/optimizing-decentralized-online-learning-for-supervised-regression-and-classification-problems)
 
 - Major repos/readmes:
   - [chain](https://github.com/allora-network/allora-chain)
   - [off-chain](https://github.com/allora-network/allora-offchain-node)
   - [coin prediction worker](https://github.com/allora-network/basic-coin-prediction-node)
-  - [coin prediction reputer](https://example.com/coin-prediction-reputer)
+  - [coin prediction reputer]()
 
-- Docs:
-  - Cosmos docs:
-    - [Cosmos Gov Module](https://docs.cosmos.network/v0.50/build/modules/gov)
-    - [CometBFT Docs](https://docs.cometbft.com/v0.38/)
-      
+
+- Cosmos docs:
+  - [Cosmos Gov Module](https://docs.cosmos.network/v0.50/build/modules/gov)
+  - [CometBFT Docs](https://docs.cometbft.com/v0.38/)
+    
 this bot should run on Slack, discord, and our doc website page.
 
 # How to update the knowledge base of the Allora information agent?
