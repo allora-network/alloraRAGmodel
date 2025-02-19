@@ -17,7 +17,6 @@ We are creating a RAG Chatbot that runs on GPT-4 and answers questions about All
 
 
 - Cosmos docs:
-  - [Cosmos Gov Module](https://docs.cosmos.network/v0.50/build/modules/gov)
   - [CometBFT Docs](https://docs.cometbft.com/v0.38/)
     
 this bot should run on Slack, discord, and our doc website page.
