@@ -126,30 +126,28 @@ documents = loader.load()
 # 2. Split documents using Python-aware splitter
 python_splitter = RecursiveCharacterTextSplitter.from_language(
     language=Language.PYTHON,
-    chunk_size=800, # hyperparameter
-    chunk_overlap=200, # hyperparameter
+    chunk_size=750,
+    chunk_overlap=200,
 )
-
 split_docs = python_splitter.split_documents(documents)
 
 # 3. Initialize embeddings
 embeddings = OpenAIEmbeddings(model="text-embedding-3-large")
 
 # 4. Pinecone setup
-
 index_name = "alloraproduction"
 vector_dimension = 3072  # Dimension for text-embedding-3-large
+
 
 # Initialize vector store with the new client
 vector_db = PineconeVectorStore.from_documents(
     documents=split_docs,
     embedding=embeddings,
     index_name=index_name,
-    pinecone_api_key=os.getenv("PINECONE_API_KEY")  
+    pinecone_api_key=os.getenv("PINECONE_API_KEY")  # Add this line
 )
 
 print("Vectorization complete. Documents stored in Pinecone.")
-
 
 ```
 
