@@ -1,6 +1,6 @@
 # Allora RAG Information Bot
 
-We are creating a RAG Chatbot that runs on GPT-4 and answers questions about Allora labs, pulling from information provided by our docs, research papers, and part of our codebase. This bot should run on Slack, discord, and our doc website page.
+We're developing a RAG Chatbot powered by GPT-4 that will answer questions about Allora Labs using content from our documentation, research papers, and portions of our codebase. The chatbot will be accessible via Slack, Discord, and our documentation website.
 
 
 ## What data did we train it on (updated 2/20/25)
@@ -24,7 +24,7 @@ We are creating a RAG Chatbot that runs on GPT-4 and answers questions about All
 
 ## Spec (updated 2/20/25)
 
-We instantiated a pinecone vector database under the name 'alloraproduction' under the Q&A chat project. Within the database, we have vectorized our data using the openai text-embedding-3-large model resulting in a database of 3072 dimension vectors.
+We instantiated a pinecone vector database under the name 'alloraproduction' under the Q&A chat project. Within the database, we have vectorized our data using the openai text-embedding-3-large model resulting in a database of 3072 dimension vectors. We created a langchain model chain where 
 
 
 We used fastapi to connect to a POST endpoint that:
@@ -43,27 +43,27 @@ We use the langchain library to instantiate a workflow between the user's questi
 
 ### Overview
 
-To add more documentation to our Allora agent, we need to add more information to our pinecone database 'alloraproduction' (example shown below)
+To add more documentation to our Allora agent, we need to add more information to our pinecone database 'alloraproduction' (example for github and local pdf shown below)
 
+In the examples below, we split and vectorized our data/files into Pinecone using the LangChain library (though any method that adheres to the 3072 dimensions and utilizes the OpenAI text-embedding-3-large model is acceptable). Regardless of what library you use to split and vectorize your data, you will need to store it within the Pinecone database. 
 
-### Example: Splitting and Vectorizing Text Data
-
-In the example below, we split and vectorized our pdf data into Pinecone using the LangChain library (though any method that adheres to the 3072 dimensions and utilizes the OpenAI text-embedding-3-large model is acceptable). Regardless of what library you use, you will need to split and embed to store it within the Pinecone database. After completing this step to put our new data embeddings into our pinecone database, it will automatically pull from the newly provided information. You can check if these embeddings actually rendered by checking if they were added in pinecone.
+Once you've added the new data embeddings to your Pinecone database, any prompt sent to your endpoint will automatically include this updated context. You can confirm that the embeddings have been successfully added by searching for specific key or field values—such as an ID or source—in Pinecone.
 
 #### Notes
 
-chunk_size and chunk_overlap are hyperparameters that are set depending on how detailed you want the data to be represented when it gets searched
+chunk_size and chunk_overlap are hyperparameters that you can adjust to control how detailed the data representation is when it is searched.
+
+### Example: Splitting and Vectorizing Text Data
 
 
 ```python
 # insert local path of your pdf here 
 
 pdf_path = ""
+curindex_name="alloraproduction"
 
 loader = PyMuPDFLoader(pdf_path)
 docs = loader.load()  # This returns a list of Document objects
-
-os.environ["PINECONE_API_KEY"] = ""
 
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
@@ -82,7 +82,7 @@ embeddings = OpenAIEmbeddings(model="text-embedding-3-large")
 vector_store = PineconeVectorStore.from_documents(
     split_docs,
     embedding=embeddings,
-    index_name="alloraproduction"
+    index_name=curindex_name
 )
 
 # load our server account API here
@@ -114,7 +114,7 @@ embeddings = OpenAIEmbeddings(model="text-embedding-3-large")
 
 # 1. Clone and load Python files from repo
 
-# allora-offchain-node used as an example, but you can put any desired path here 
+# allora-offchain-node used as an example, change based on what repo you decide to vectorize
 repo_path = "allora-offchain-node"
 
 # change based on branch you want to copy from 
