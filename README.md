@@ -3,7 +3,7 @@
 We're developing a RAG Chatbot powered by GPT-4 that will answer questions about Allora Labs using content from our documentation, research papers, and portions of our codebase. The chatbot will be accessible via Slack, Discord, and our documentation website.
 
 
-## Spec (updated 2/20/25)
+## Description 
 
 We've set up a Pinecone vector database called alloraproduction for our Q&A chat project. Our data is transformed into 3072-dimensional vectors using the OpenAI text-embedding-3-large model and stored in this database. We then established a LangChain workflow that links our Pinecone database with a GPT-4 instance. When a user sends in a question via a FastAPI POST endpoint, the following steps occur:
 
@@ -39,13 +39,24 @@ Our LangChain workflow acts as a bridge between the user's query and the GPT-4 m
 
 To add more documentation to our Allora agent, we need to add more data (in the form of embeddings) to our Pinecone database 'alloraproduction'. In the examples below, we split and vectorized our data/files into Pinecone using the LangChain library (though any method that adheres to the 3072 dimensions and utilizes the OpenAI text-embedding-3-large model is acceptable). Regardless of the library you use to split and vectorize your data, you must store it within the Pinecone database. 
 
-Once you've added the new data embeddings to your Pinecone database, any prompt sent to your endpoint will automatically include this updated context to answer it. You can confirm that the embeddings have been successfully added by searching for specific key or field values—such as an ID or source—in Pinecone. (examples for github and local pdf shown below)
+Once you've added the new data embeddings to your Pinecone database, any prompt sent to your endpoint will automatically include this updated context to answer it. You can confirm that the embeddings have been successfully added by searching for specific key or field values—such as an ID or source—in Pinecone. 
+
+****Examples to add github files and pdf data are shown below****
 
 #### Notes
 
 chunk_size and chunk_overlap are hyperparameters that you can adjust to control how detailed the data representation is when it is searched.
 
 ### Example: Splitting and Vectorizing PDF 
+
+_Load a PDF Document:_
+- It uses PyMuPDFLoader to load a PDF from a specified local path, resulting in a list of document objects.
+
+_Split the Document into Chunks:_
+- The loaded document is split into smaller chunks using RecursiveCharacterTextSplitter. This is useful for processing large texts in manageable segments.
+
+_Create Text Embeddings and Set Up a Vector Store:_
+- Text embeddings are generated using the OpenAIEmbeddings model, and these embeddings are then stored in a Pinecone vector store for efficient retrieval.
 
 
 ```python
@@ -65,19 +76,11 @@ text_splitter = RecursiveCharacterTextSplitter(
 )
 split_docs = text_splitter.split_documents(docs)
 
-# load our server account API here
+# set/get our server account APIs here
 os.environ["OPENAI_API_KEY"] = ""
+os.environ["PINECONE_API_KEY"] = ""
 
 embeddings = OpenAIEmbeddings(model="text-embedding-3-large")
-
-# Initialize Pinecone vector store
-vector_store = PineconeVectorStore.from_documents(
-    split_docs,
-    embedding=embeddings,
-    index_name=curindex_name,
-    pinecone_api_key=os.getenv("PINECONE_API_KEY")
-
-)
 
 # load our server account API here
 pc = Pinecone(api_key=os.getenv("PINECONE_API_KEY"))
@@ -86,7 +89,18 @@ index = pc.Index("alloraproduction")
 vector_store = PineconeVectorStore(embedding=embeddings, index=index)
 ```
 
+
 ### Example: Splitting and Vectorizing Github Files
+
+_Load Documents from GitHub:_
+- Uses GitLoader to clone the repository and filter for Markdown files from a specified branch.
+
+_Split Documents:_
+- Uses a language-aware splitter (RecursiveCharacterTextSplitter.from_language) configured for Python to break the documents into chunks.
+
+_Generate Embeddings & Store Vectors:_
+- Initializes the OpenAI embeddings model (text-embedding-3-large).
+- Creates a Pinecone vector store by converting document chunks into vectors and storing them under a specified index.
 
 ```python
 
@@ -151,9 +165,68 @@ print("Vectorization complete. Documents stored in Pinecone.")
 
 ```
 
+### Example: Testing the Allora Chatbot Server
+
+This example demonstrates how to test if the Allora chatbot model is running on your server. The code sends a question as a JSON payload to the chatbot endpoint, then prints the chatbot's response along with the sources from which the answer was derived.
+
+#### How It Works
+1.) Define the Server URL:
+Set the URL of your chatbot endpoint.
+
+2.) Prepare the Request Payload:
+Create a JSON object with the key "message" containing your question. In this example, the question is:
+"What makes Allora's reward distribution different than others?"
+
+3.) Send the Request:
+Use Python's requests library to POST the payload to the server.
+
+4.) Handle the Response:
+If successful, the code prints out the chatbot's response message and the sources used.
+In case of errors (HTTP or other exceptions), it prints an error message.
+
+```python
+
+import requests
+
+# URL of the chatbot endpoint. Replace with your actual server URL.
+url = "https://your-chatbot-endpoint.com/api/chat"
+
+# The payload containing the message/question for the chatbot.
+payload = {
+    "message": "What makes Allora's reward distribution different than others?"
+}
+
+try:
+    # Send a POST request to the server with the JSON payload.
+    response = requests.post(url, json=payload)
+    
+    # Raise an error if the request was unsuccessful.
+    response.raise_for_status()
+    
+    # Parse the JSON response.
+    data = response.json()
+    
+    # Output the chatbot response and its sources.
+    print("Response:")
+    print("Message:", data.get("response"))
+    print("Sources:", data.get("sources"))
+
+except requests.exceptions.HTTPError as http_err:
+    print(f"HTTP error occurred: {http_err}")
+except Exception as err:
+    print(f"Other error occurred: {err}")
+
+```
+
+For this particular example, you should expect an output similar to:
+
+*Response:
+Message:  Allora's reward distribution is differentiated and based on a carefully designed incentive mechanism that aligns with the interests of the network and allows for continual learning and improvement. 
+Sources: ['/markdown_files4/pages/devs/reference/module-accounts.mdx', '/markdown_files4/pages/home/overview.mdx'*
+
 ### Future Updates
 
-When adding new data to the model, it should be added to this readme to keep for future reference
+When adding new data to the model, it should be added to this readme to keep for future reference.
 
 
 
