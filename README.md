@@ -45,7 +45,7 @@ Once you've added the new data embeddings to your Pinecone database, any prompt 
 
 chunk_size and chunk_overlap are hyperparameters that you can adjust to control how detailed the data representation is when it is searched.
 
-### Example: Splitting and Vectorizing Text Data
+### Example: Splitting and Vectorizing PDF 
 
 
 ```python
