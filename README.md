@@ -3,6 +3,17 @@
 We're developing a RAG Chatbot powered by GPT-4 that will answer questions about Allora Labs using content from our documentation, research papers, and portions of our codebase. The chatbot will be accessible via Slack, Discord, and our documentation website.
 
 
+## Spec (updated 2/20/25)
+
+We've set up a Pinecone vector database called alloraproduction for our Q&A chat project. Our data is transformed into 3072-dimensional vectors using the OpenAI text-embedding-3-large model and stored in this database. We then established a LangChain workflow that links our Pinecone database with a GPT-4 instance. When a user sends in a question via a FastAPI POST endpoint, the following steps occur:
+
+1. The user's question is received as a plain text string.
+2. The question is converted into a vector using the text-embedding-3-large model.
+3. This vector is then sent to our LangChain workflow, which uses the GPT-4 instance—trained on context retrieved from our Pinecone index—to generate a response.
+   
+Our LangChain workflow acts as a bridge between the user's query and the GPT-4 model. Our model first gathers the right background information and then uses GPT-4 to turn that information into a helpful response based our Pinecone context
+
+
 ## What data did we train it on (updated 2/20/25)
 
 - Major research papers:
@@ -22,32 +33,13 @@ We're developing a RAG Chatbot powered by GPT-4 that will answer questions about
   - [Cosmos Docs](https://github.com/cosmos/cosmos-sdk-docs)
 
 
-## Spec (updated 2/20/25)
-
-We instantiated a pinecone vector database under the name 'alloraproduction' under the Q&A chat project. Within the database, we have vectorized our data using the openai text-embedding-3-large model resulting in a database of 3072 dimension vectors. We created a langchain model chain where 
-
-
-We used fastapi to connect to a POST endpoint that:
-
-1.) receives the user's query (question) in string format
-
-2.) Vectorize the user's question using text-embedding-3-large 
-
-3.) sends vectorized question to langchain workflow to get the chatbot to return a response (answer). 
-
-We use the langchain library to instantiate a workflow between the user's question and gpt4 response. The GPT4 instance we use is trained on our pinecone index that is from:
-
-
-
 ## How to update the knowledge context/add more documentation?
 
 ### Overview
 
-To add more documentation to our Allora agent, we need to add more information to our pinecone database 'alloraproduction' (example for github and local pdf shown below)
+To add more documentation to our Allora agent, we need to add more data (in the form of embeddings) to our Pinecone database 'alloraproduction'. In the examples below, we split and vectorized our data/files into Pinecone using the LangChain library (though any method that adheres to the 3072 dimensions and utilizes the OpenAI text-embedding-3-large model is acceptable). Regardless of the library you use to split and vectorize your data, you must store it within the Pinecone database. 
 
-In the examples below, we split and vectorized our data/files into Pinecone using the LangChain library (though any method that adheres to the 3072 dimensions and utilizes the OpenAI text-embedding-3-large model is acceptable). Regardless of what library you use to split and vectorize your data, you will need to store it within the Pinecone database. 
-
-Once you've added the new data embeddings to your Pinecone database, any prompt sent to your endpoint will automatically include this updated context. You can confirm that the embeddings have been successfully added by searching for specific key or field values—such as an ID or source—in Pinecone.
+Once you've added the new data embeddings to your Pinecone database, any prompt sent to your endpoint will automatically include this updated context to answer it. You can confirm that the embeddings have been successfully added by searching for specific key or field values—such as an ID or source—in Pinecone. (examples for github and local pdf shown below)
 
 #### Notes
 
@@ -82,7 +74,9 @@ embeddings = OpenAIEmbeddings(model="text-embedding-3-large")
 vector_store = PineconeVectorStore.from_documents(
     split_docs,
     embedding=embeddings,
-    index_name=curindex_name
+    index_name=curindex_name,
+    pinecone_api_key=os.getenv("PINECONE_API_KEY")
+
 )
 
 # load our server account API here
@@ -145,13 +139,6 @@ embeddings = OpenAIEmbeddings(model="text-embedding-3-large")
 
 index_name = "alloraproduction"
 vector_dimension = 3072  # Dimension for text-embedding-3-large
-
-# Initialize Pinecone ####
-
-# 4. Pinecone setup 
-pc = Pinecone(
-    api_key=os.getenv("PINECONE_API_KEY")
-)
 
 # Initialize vector store with the new client
 vector_db = PineconeVectorStore.from_documents(
