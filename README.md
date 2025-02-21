@@ -1,63 +1,69 @@
 # Allora RAG Information Bot
 
-We're developing a RAG Chatbot powered by GPT-4 that will answer questions about Allora Labs using content from our documentation, research papers, and portions of our codebase. The chatbot will be accessible via Slack, Discord, and our documentation website.
+We're building a RAG Chatbot powered by **GPT-4** to answer questions about Allora Labs using content from our documentation, research papers, and codebase. The chatbot is accessible via Slack, Discord, and our documentation website.
 
+---
 
-## Description 
+## Description
 
-We've set up a Pinecone vector database called alloraproduction for our Q&A chat project. Our data is transformed into 3072-dimensional vectors using the OpenAI text-embedding-3-large model and stored in this database. We then established a LangChain workflow that links our Pinecone database with a GPT-4 instance. When a user sends in a question via a FastAPI POST endpoint, the following steps occur:
+Our Q&A chat project uses a Pinecone vector database called **alloraproduction**. Data is converted into **3072-dimensional vectors** using the OpenAI `text-embedding-3-large` model. A LangChain workflow connects this database with GPT-4. When a user submits a question via a FastAPI POST endpoint, the following happens:
 
-1. The user's question is received as a plain text string.
-2. The question is converted into a vector using the text-embedding-3-large model.
-3. This vector is then sent to our LangChain workflow, which uses the GPT-4 instance—trained on context retrieved from our Pinecone index—to generate a response.
-   
-Our LangChain workflow acts as a bridge between the user's query and the GPT-4 model. Our model first gathers the right background information and then uses GPT-4 to turn that information into a helpful response based our Pinecone context
+1. **Receive Question:** The user's question is received as plain text.
+2. **Convert to Vector:** The question is embedded into a vector.
+3. **Generate Response:** GPT-4, informed by context retrieved from Pinecone, generates a helpful answer.
 
+This workflow effectively bridges the user's query with GPT-4 by gathering relevant background information from our stored context.
 
-## What data did we train it on (updated 2/20/25)
+---
 
-- Major research papers:
-  - [Allora White Paper](https://www.allora.network/research/optimizing-decentralized-online-learning-for-supervised-regression-and-classification-problems)
-  - [Merit-based sortition in Decentralized Systems](https://www.allora.network/research/merit-based-sortition-in-decentralized-systems)
-  - [Optimizing Decentralized Online Learning for Supervised Regression and Classification Problems](https://www.allora.network/research/optimizing-decentralized-online-learning-for-supervised-regression-and-classification-problems)
+## Training Data (Updated 2/20/25)
 
-- Major repos/readmes:
-  - [chain](https://github.com/allora-network/allora-chain)
-  - [off-chain](https://github.com/allora-network/allora-offchain-node)
-  - [coin prediction worker](https://github.com/allora-network/basic-coin-prediction-node)
-  - [coin prediction reputer](https://github.com/allora-network/coin-prediction-reputer)
-  - autogluon-prediction
+### Major Research Papers
+- [Allora White Paper](https://www.allora.network/research/optimizing-decentralized-online-learning-for-supervised-regression-and-classification-problems)
+- [Merit-based Sortition in Decentralized Systems](https://www.allora.network/research/merit-based-sortition-in-decentralized-systems)
+- [Optimizing Decentralized Online Learning for Supervised Regression and Classification Problems](https://www.allora.network/research/optimizing-decentralized-online-learning-for-supervised-regression-and-classification-problems)
 
-- Other docs:
-  - [CometBFT Docs](https://docs.cometbft.com/v0.38/)
-  - [Cosmos Docs](https://github.com/cosmos/cosmos-sdk-docs)
+### Major Repos/Readmes
+- [allora-chain](https://github.com/allora-network/allora-chain)
+- [allora-offchain-node](https://github.com/allora-network/allora-offchain-node)
+- [coin prediction worker](https://github.com/allora-network/basic-coin-prediction-node)
+- [coin prediction reputer](https://github.com/allora-network/coin-prediction-reputer)
+- autogluon-prediction
 
+### Other Documentation
+- [CometBFT Docs](https://docs.cometbft.com/v0.38/)
+- [Cosmos Docs](https://github.com/cosmos/cosmos-sdk-docs)
 
-## How to update the knowledge context/add more documentation?
+---
 
-### Overview
+## Updating the Knowledge Context
 
-To add more documentation to our Allora agent, we need to add more data (in the form of embeddings) to our Pinecone database 'alloraproduction'. In the examples below, we split and vectorized our data/files into Pinecone using the LangChain library (though any method that adheres to the 3072 dimensions and utilizes the OpenAI text-embedding-3-large model is acceptable). Regardless of the library you use to split and vectorize your data, you must store it within the Pinecone database. 
+To add new documentation, you must add additional data embeddings to the **alloraproduction** Pinecone database. Follow these steps:
 
-Once you've added the new data embeddings to your Pinecone database, any prompt sent to your endpoint will automatically include this updated context to answer it. You can confirm that the embeddings have been successfully added by searching for specific key or field values—such as an ID or source—in Pinecone. 
+1. **Split & Vectorize:**  
+   Use the LangChain library (or another method that adheres to 3072 dimensions and uses `text-embedding-3-large`) to split and vectorize your data.
 
-****Examples to add github files and pdf data are shown below****
+2. **Store in Pinecone:**  
+   Ensure the vectorized data is stored in Pinecone.
 
-#### Notes
+3. **Automatic Update:**  
+   Any new embeddings are automatically included in responses. Verify insertion by searching for specific keys (e.g., an ID or source) in Pinecone.
 
-chunk_size and chunk_overlap are hyperparameters that you can adjust to control how detailed the data representation is when it is searched.
+> **Note:** Adjust `chunk_size` and `chunk_overlap` to control the granularity of your data representation.
 
-### Example: Splitting and Vectorizing PDF 
+---
+## Example: Splitting and Vectorizing PDF
 
-_Load a PDF Document:_
-- It uses PyMuPDFLoader to load a PDF from a specified local path, resulting in a list of document objects.
+**Process Overview:**
 
-_Split the Document into Chunks:_
-- The loaded document is split into smaller chunks using RecursiveCharacterTextSplitter. This is useful for processing large texts in manageable segments.
+- **Load PDF:**  
+  Uses `PyMuPDFLoader` to load a PDF from a local path.
 
-_Create Text Embeddings and Set Up a Vector Store:_
-- Text embeddings are generated using the OpenAIEmbeddings model, and these embeddings are then stored in a Pinecone vector store for efficient retrieval.
+- **Split Document:**  
+  Uses `RecursiveCharacterTextSplitter` to break the document into chunks.
 
+- **Generate Embeddings & Vector Store:**  
+  Creates text embeddings with OpenAI and stores them in a Pinecone vector store.
 
 ```python
 # insert local path of your pdf here 
@@ -89,18 +95,18 @@ index = pc.Index("alloraproduction")
 vector_store = PineconeVectorStore(embedding=embeddings, index=index)
 ```
 
+## Example: Splitting and Vectorizing GitHub Files
 
-### Example: Splitting and Vectorizing Github Files
+### Process Overview
 
-_Load Documents from GitHub:_
-- Uses GitLoader to clone the repository and filter for Markdown files from a specified branch.
+- **Load Documents:**  
+  Clones a GitHub repository and filters for Markdown files using `GitLoader`.
 
-_Split Documents:_
-- Uses a language-aware splitter (RecursiveCharacterTextSplitter.from_language) configured for Python to break the documents into chunks.
+- **Split Documents:**  
+  Uses a language-aware splitter (`RecursiveCharacterTextSplitter.from_language`) configured for Python to break the documents into manageable chunks.
 
-_Generate Embeddings & Store Vectors:_
-- Initializes the OpenAI embeddings model (text-embedding-3-large).
-- Creates a Pinecone vector store by converting document chunks into vectors and storing them under a specified index.
+- **Generate Embeddings & Store Vectors:**  
+  Converts the document chunks into vectors using the OpenAI `text-embedding-3-large` model and stores them in a Pinecone index.
 
 ```python
 
@@ -122,14 +128,17 @@ embeddings = OpenAIEmbeddings(model="text-embedding-3-large")
 
 # 1. Clone and load Python files from repo
 
+# change based on repo you want to copy from 
+clone_url = "https://github.com/allora-network/allora-offchain-node/"
+
 # allora-offchain-node used as an example, change based on what repo you decide to vectorize
 repo_path = "allora-offchain-node"
 
 # change based on branch you want to copy from 
-branch = "dev"  
+branch = "dev"
 
 loader = GitLoader(
-    clone_url="https://github.com/allora-network/allora-offchain-node/",
+    clone_url=clone_url,
     repo_path=repo_path,
     branch=branch,
     file_filter=lambda file_path: file_path.endswith(".md")
@@ -165,24 +174,21 @@ print("Vectorization complete. Documents stored in Pinecone.")
 
 ```
 
-### Example: Testing the Allora Chatbot Server
+## Example: Testing the Allora Chatbot Server
 
-This example demonstrates how to test if the Allora chatbot model is running on your server. The code sends a question as a JSON payload to the chatbot endpoint, then prints the chatbot's response along with the sources from which the answer was derived.
+### Process Overview
 
-#### How It Works
-1.) Define the Server URL:
-Set the URL of your chatbot endpoint.
+- **Define the Server URL:**  
+  Set the endpoint URL for your chatbot.
 
-2.) Prepare the Request Payload:
-Create a JSON object with the key "message" containing your question. In this example, the question is:
-"What makes Allora's reward distribution different than others?"
+- **Prepare the Request Payload:**  
+  Create a JSON object with your question.
 
-3.) Send the Request:
-Use Python's requests library to POST the payload to the server.
+- **Send the Request:**  
+  POST the payload using Python's `requests` library.
 
-4.) Handle the Response:
-If successful, the code prints out the chatbot's response message and the sources used.
-In case of errors (HTTP or other exceptions), it prints an error message.
+- **Handle the Response:**  
+  Print the chatbot's response and its sources.
 
 ```python
 
@@ -217,16 +223,15 @@ except Exception as err:
     print(f"Other error occurred: {err}")
 
 ```
-
 For this particular example, you should expect an output similar to:
 
-*Response:
-Message:  Allora's reward distribution is differentiated and based on a carefully designed incentive mechanism that aligns with the interests of the network and allows for continual learning and improvement. 
-Sources: ['/markdown_files4/pages/devs/reference/module-accounts.mdx', '/markdown_files4/pages/home/overview.mdx'*
+*Response:  
+Message:  Allora's reward distribution is differentiated and based on a carefully designed incentive mechanism that aligns with the interests of the network and allows for continual learning and improvement.  
+Sources: ['/markdown_files4/pages/devs/reference/module-accounts.mdx', '/markdown_files4/pages/home/overview.mdx']*
 
-### Future Updates
+## Future Updates
 
-When adding new data to the model, it should be added to this readme to keep for future reference.
+When new data is added, update this document to keep track of changes and ensure the knowledge context remains current.
 
 
 
