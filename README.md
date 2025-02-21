@@ -153,4 +153,9 @@ print("Vectorization complete. Documents stored in Pinecone.")
 
 ```
 
+### Future Updates
+
+When adding new data to the model, it should be added to this readme to keep for future reference
+
+
 
