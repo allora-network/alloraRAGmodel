@@ -26,7 +26,6 @@ We are creating a RAG Chatbot that runs on GPT-4 and answers questions about All
 
 We instantiated a pinecone vector database under the name 'alloraproduction' under the Q&A chat project. Within the database, we have vectorized our data using the openai text-embedding-3-large model resulting in a database of 3072 dimension vectors.
 
-![image](https://github.com/user-attachments/assets/c68528b7-2f47-4d88-a41e-bf2a4ea7d803)
 
 We used fastapi to connect to a POST endpoint that:
 
