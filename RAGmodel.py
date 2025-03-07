@@ -23,6 +23,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
+with open("additional_context.txt", "r") as file:
+    more_context = file.read()
+
+
 # set/load environment variables -> edit this for production 
 # Initialize Pinecone client
 pc = Pinecone(api_key=os.getenv("PINECONE_API_KEY"))
@@ -49,10 +54,11 @@ except Exception as e:
 
 custom_prompt = PromptTemplate(
     template=(
-        "You are a highly knowledgeable assistant that assists users on learning about Allora and all of its offerings. Use the context provided below to answer the question. "
-        "If the answer is not contained in the context, say 'I don't know'.\n\n"
-        "Question: {question}\n\n"
-        "Context:\n{context}\n\n"
+        "You are a highly knowledgeable assistant who helps users learn about Allora and all of its offerings. Use the context provided below to answer the question. Here is some additional context about the revenue model:"
+        f"{more_context}\n\n"
+        "If someone asks a question related to cost per inference, this is a non-answerable question. If the answer is not contained in the context, say 'I don't know'.\n\n"
+        "Question: {{question}}\n\n"
+        "Retrieved Context:\n{{context}}\n\n"
         "Answer:"
     ),
     input_variables=["question", "context"]
