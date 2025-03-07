@@ -8,6 +8,8 @@ from langchain_community.llms import OpenAI
 from langchain_community.vectorstores import Pinecone as PineconeVectorStore
 from langchain_openai import OpenAIEmbeddings  # Updated import
 from langchain.chains import RetrievalQA
+from langchain.prompts import PromptTemplate
+
 
 # Initialize FastAPI app
 app = FastAPI()
@@ -44,13 +46,26 @@ try:
 except Exception as e:
     raise RuntimeError(f"Error connecting to Pinecone index: {str(e)}")
 
-# Create retrieval QA chain
+
+custom_prompt = PromptTemplate(
+    template=(
+        "You are a highly knowledgeable assistant that assists users on learning about Allora and all of its offerings. Use the context provided below to answer the question. "
+        "If the answer is not contained in the context, say 'I don't know'.\n\n"
+        "Question: {question}\n\n"
+        "Context:\n{context}\n\n"
+        "Answer:"
+    ),
+    input_variables=["question", "context"]
+)
+
 qa = RetrievalQA.from_chain_type(
     llm=OpenAI(temperature=0, openai_api_key=os.getenv("OPENAI_API_KEY")),
     chain_type="stuff",
     retriever=vectorstore.as_retriever(),
-    return_source_documents=True
+    return_source_documents=True,
+    chain_type_kwargs={"prompt": custom_prompt}  # use your custom prompt
 )
+
 
 # Request/Response models
 class ChatRequest(BaseModel):
