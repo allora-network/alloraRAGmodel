@@ -92,7 +92,11 @@ embeddings = OpenAIEmbeddings(model="text-embedding-3-large")
 pc = Pinecone(api_key=os.getenv("PINECONE_API_KEY"))
 index = pc.Index("alloraproduction")
 
-vector_store = PineconeVectorStore(embedding=embeddings, index=index)
+vector_store = PineconeVectorStore.from_documents(
+    documents=split_docs,
+    embedding=embeddings,
+    index_name="alloraproduction"
+)
 ```
 
 ## Example: Splitting and Vectorizing GitHub Files
