@@ -1,0 +1,30 @@
+"In the Allora decentralized intelligence network, the revenue model and how participants (workers, reputers, and forecasters) are compensated is structured as follows:
+
+Workers:
+Workers are paid based on their unique contributions to the network's inference accuracy. Workers provide two main types of contributions:
+Inference: Direct predictions made for a specific task.
+Forecasting: Predictions of how accurate other workers' inferences will be under current conditions.
+The network calculates the unique value of each worker's contribution using approximations of Shapley values, specifically comparing the network accuracy with and without their contribution. Workers are rewarded proportionally to the improvement their contributions bring to network accuracy. These rewards are independent of monetary stakes, ensuring they are purely performance-based and focused on maximizing network accuracy​
+.
+Reward Calculation for Workers:
+The network uses a "one-out" method (similar to Shapley values) to evaluate each worker's inference contribution. Essentially, it calculates how the network accuracy would change if an individual worker's input were omitted.
+For forecasting contributions, an additional "one-in" method evaluates how the addition of forecasted accuracy impacts network performance, especially useful in situations of redundancy among forecasting workers.
+Workers' reward shares are determined by a scoring system based on the improvements their contributions offer to the overall network accuracy. A modified entropy function is applied to incentivize decentralization by rewarding a diverse set of contributors fairly and proportionally​
+.
+Reputers' Revenue Model:
+Reputers evaluate the quality of workers' predictions after ground truth becomes available. They provide economic security by staking tokens and are rewarded based on two factors:
+Stake: Amount of tokens they have staked.
+Consensus accuracy: How closely their evaluations match those of other reputers.
+Rewards for reputers depend on their stake size and accuracy of evaluations, with higher consensus scores leading to larger rewards. Their stake increases with successful performance and can decrease (due to dilution) with poor performance.
+To prevent centralization, reputers' rewards are capped by an adjusted stake calculation that reduces the dominance of large stakes, thus protecting the system from a single actor dominating consensus​
+.
+Forecasters' Revenue Model (Integrated with Workers):
+Workers who perform forecasting tasks (also called forecasters) receive rewards similarly to inference workers—based on their unique ability to improve overall network accuracy through context-aware predictions about other workers' performance.
+Rewards for forecasting are calculated using a combination of their individual contribution to improving network inference accuracy and the redundancy they provide, incentivizing workers to continue forecasting even when redundancy exists. The forecasting rewards also reflect their overall utility to the network compared to inference tasks​
+.
+Consumers' Payment Model:
+Consumers request predictions from the network and pay for them using the network’s token, ALLO. The pricing model for consumers is based on a Pay-What-You-Want (PWYW) model. This means consumers decide the fee they pay, though market dynamics (e.g., competition between different prediction topics) create natural incentives to pay fair prices to maintain high-quality services. Fees collected from consumers contribute directly to the rewards distributed across the network, offsetting the inflationary effect of token emissions​
+.
+Tokenomics and Reward Distribution:
+The network emits ALLO tokens to provide liquidity for reward payouts, controlled through a token emission schedule, and incentivizes staking by reputers and validators. The emission rate considers token circulation, staked tokens, and recent economic activity within topics.
+The total reward pool available for distribution at each step is split among the inference tasks, forecasting tasks, and reputer tasks proportionally based on their adjusted entropy (to encourage decentralization) and the relative utility of forecasting tasks. Thus, revenue distribution dynamically adapts, aligning incentives with network value and performance"
