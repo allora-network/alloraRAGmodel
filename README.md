@@ -133,7 +133,7 @@ embeddings = OpenAIEmbeddings(model="text-embedding-3-large")
 # 1. Clone and load Python files from repo
 
 # change based on repo you want to copy from 
-clone_url = "https://github.com/allora-network/allora-offchain-node/"
+repo_url = "https://github.com/allora-network/allora-offchain-node/"
 
 # allora-offchain-node used as an example, change based on what repo you decide to vectorize
 repo_path = "allora-offchain-node"
@@ -142,21 +142,43 @@ repo_path = "allora-offchain-node"
 branch = "dev"
 
 loader = GitLoader(
-    clone_url=clone_url,
+    clone_url=repo_url,
     repo_path=repo_path,
     branch=branch,
-    file_filter=lambda file_path: file_path.endswith(".md")
-)
+        file_filter=lambda file_path: file_path.endswith((".go", ".py"))
 
+)# Load documents from the repository
 documents = loader.load()
 
-# 2. Split documents using Python-aware splitter
-python_splitter = RecursiveCharacterTextSplitter.from_language(
-    language=Language.PYTHON,
-    chunk_size=750,
+
+# Update metadata for each document with repo info and other details
+for doc in documents:
+    # Assuming GitLoader stores the file path in the "source" metadata field
+    file_path = doc.metadata.get("source", "")
+    if file_path:
+        file_name = os.path.basename(file_path)
+        file_ext = os.path.splitext(file_path)[1]
+        # Infer language from file extension (could be extended with more sophisticated logic)
+        language = "Python" if file_ext == ".py" else "Go" if file_ext == ".go" else "Unknown"
+        
+        doc.metadata.update({
+            "file_name": file_name,
+            "file_path": file_path,
+            "repository_name": os.path.splitext(os.path.basename(repo_url))[0],
+            "branch": branch,
+            "file_extension": file_ext,
+            "language": language,
+            # You could add more fields here, such as commit hash, author, etc.
+        })
+
+# 2. Split documents using a language-aware splitter
+# Note: Choose the appropriate language or a generic splitter if processing multiple languages.
+splitter = RecursiveCharacterTextSplitter.from_language(
+    language=Language.PYTHON,  # Or use a generic splitter if needed
+    chunk_size=500,
     chunk_overlap=200,
 )
-split_docs = python_splitter.split_documents(documents)
+split_docs = splitter.split_documents(documents)
 
 # 3. Initialize embeddings
 embeddings = OpenAIEmbeddings(model="text-embedding-3-large")
