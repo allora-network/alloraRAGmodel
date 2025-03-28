@@ -1,0 +1,141 @@
+========================
+Allora Network - FAQ
+========================
+
+Q: I am running other containers on my host machine. How can I identify Allora related containers to take necessary actions?
+A:
+1) Run: `docker ps -a`
+2) Stop containers: `docker stop <container id>` or `docker compose down`
+3) Remove containers: `docker rm <container id>`
+4) List images: `docker images -a`
+5) Remove images: `docker rmi -f <image id>`
+6) Rebuild services: `docker compose up --build -d`
+
+Q: I am using basic-coin-prediction-node already, how can I upgrade my worker?
+A:
+- It already uses `allora-offchain-node:v0.4.0`
+- To upgrade:
+```
+docker compose down
+docker compose pull
+docker compose up -d
+```
+
+Q: How to Upgrade Allora Worker to v0.4.0 (allora-offchain-node)?
+A:
+1) Backup: `adapter/api/source/*`, `config.json`
+2) Stop services: `docker compose down`
+3) Cleanup: `docker rm $(docker ps -aq) && docker rmi -f $(docker images -aq)`
+4) Clone repo: `git clone https://github.com/allora-network/allora-offchain-node`
+5) Restore config.json
+6) Init config: `chmod +x init.config && ./init.config`
+7) Build: `docker compose up --build -d`
+
+Q: How do I check whether my worker is submitting data to the chain?
+A: `docker logs -f <worker container id> 2>&1 | grep -i "Success"`
+
+Q: I’ve been running the nodes for a month now, but why haven’t I received any points yet?
+A:
+- Running nodes alone doesn't guarantee rewards.
+- Understand the consensus mechanism: https://docs.allora.network/home/layers/consensus
+- Improve and optimize your model for better predictions.
+
+Q: How to upgrade your worker node with the upgraded network?
+A:
+```
+docker compose down
+docker system prune
+docker compose pull
+docker compose up --build -d
+```
+
+Q: How to change "submitTx": false to "submitTx": true?
+A:
+1) Edit: `nano config.json`
+2) Update value to `true`
+3) Run: `./init.config`
+4) Restart: `docker compose down && docker compose up -d`
+
+Q: How to use the new updated Basic Coin Prediction Worker Node?
+A:
+```
+git clone https://github.com/allora-network/basic-coin-prediction-node
+cd basic-coin-prediction-node
+cp .env.example .env
+nano .env
+cp config.example.json config.json
+nano config.json
+chmod +x init.config
+./init.config
+docker compose up --build
+docker logs -f worker
+```
+
+Q: How can I recover my wallet?
+A: `allorad keys add <wallet name> --recover`
+
+Q: How can I migrate my worker to testnet?
+A:
+1) Find docker path: `docker-compose ls`
+2) Enter directory: `cd /path/to/docker-compose.yml`
+3) Bring services down: `docker-compose down`
+4) Clean up:
+```
+docker rm $(docker ps -aq) 2>/dev/null
+docker rmi -f $(docker images -aq) 2>/dev/null
+```
+5) Replace RPC:
+```
+sed -i 's|--allora-node-rpc-address=https://allora-rpc.edgenet.allora.network/|--allora-node-rpc-address=https://allora-rpc.testnet-1.testnet.allora.network/|' docker-compose.yml
+```
+6) Build & run:
+```
+docker-compose build
+docker-compose up -d
+```
+
+7) Check logs and test:
+```
+docker logs -f $(docker ps -q --filter "ancestor=basic-coin-prediction-node-worker")
+wget -O checkyourworker.sh https://raw.githubusercontent.com/casual1st/alloraworkersetup/main/checkyourworker.sh && chmod +x checkyourworker.sh && ./checkyourworker.sh
+```
+
+Q: How to check balance via CLI terminal?
+A:
+1) Use faucet: https://faucet.testnet-1.testnet.allora.network/
+2) Check balance:
+```
+allorad q bank balances <YOUR_WALLET_ADDRESS> --node https://allora-rpc.testnet-1.testnet.allora.network/
+```
+
+Q: I couldn’t find .bash_profile on WSL?
+A: Use `.profile` instead of `.bash_profile`
+
+Q: How to test your worker inferences?
+A:
+```
+wget -O checkyourworker.sh https://raw.githubusercontent.com/casual1st/alloraworkersetup/main/checkyourworker.sh
+chmod +x checkyourworker.sh
+./checkyourworker.sh
+```
+
+Note: Default topic is `allora-topic-1-worker` (ETH).
+You can pass the topic as an argument, e.g., `./checkyourworker.sh allora-topic-3-worker` for BTC.
+
+Q: docker compose commands not working?
+A:
+- You may be in the wrong directory.
+- Ensure you're in the directory with `docker-compose.yml`
+- Use:
+```
+dir -a
+cd <path to your folder>
+```
+
+Q: How do I add Allora to my Keplr/Leap wallet?
+A: Visit: https://explorer.testnet-1.testnet.allora.network/wallet/suggest and click "Suggest Allora-edgenet to keplr".
+
+Q: I received faucet but can’t see my balance?
+A:
+- Visit: https://explorer.testnet-1.testnet.allora.network/allora-testnet-1
+- Click "MORE", then hover over the pie chart to see actual balance.
