@@ -27,6 +27,9 @@ app.add_middleware(
 with open("additional_context.txt", "r") as file:
     more_context = file.read()
 
+with open("FAQ.txt", "r") as file:
+    FAQcontext = file.read()
+
 
 # set/load environment variables -> edit this for production 
 # Initialize Pinecone client
@@ -54,9 +57,12 @@ except Exception as e:
 
 custom_prompt = PromptTemplate(
     template=(
-        "You are a highly knowledgeable assistant who helps users learn about Allora and all of its offerings. Use the context provided below to answer the question. Here is some additional context about the revenue model:"
+        "You are a highly knowledgeable assistant who helps users learn about Allora and all of its offerings. Use the context provided below to answer the question.\n"
+        "Here is some additional context about the revenue model: \n"
         f"{more_context}\n\n"
-        "If someone asks a question related to cost per inference, this is a non-answerable question. If the answer is not contained in the context, say 'I don't know'.\n\n"
+        "Here is some additional context: \n"
+        f"{FAQcontext}\n\n"
+        "If someone asks a question related to cost per inference, this is a non-answerable question. If the answer is not contained in the context, say 'I don't know'.\n"
         "Question: {{question}}\n\n"
         "Retrieved Context:\n{{context}}\n\n"
         "Answer:"
