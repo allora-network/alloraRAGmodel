@@ -1,58 +1,46 @@
 from fastapi import FastAPI, HTTPException
-from fastapi.middleware.cors import CORSMiddleware  # Import CORSMiddleware
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import List
 import os
-from pinecone import Pinecone
-from langchain_community.llms import OpenAI
-from langchain_community.vectorstores import Pinecone as PineconeVectorStore
-from langchain_openai import OpenAIEmbeddings  # Updated import
-from langchain.chains import RetrievalQA
+import openai
 
-# Initialize FastAPI app
+# ── LlamaIndex imports ─────────────────────────────────────────────────────────
+# Managed index in LlamaCloud (connects to an existing cloud vector store) :contentReference[oaicite:0]{index=0}
+from llama_index.indices.managed.llama_cloud import LlamaCloudIndex
+# Query engine interface :contentReference[oaicite:1]{index=1}
+
+# ── FastAPI app and CORS ───────────────────────────────────────────────────────
 app = FastAPI()
-
-# Configure CORS middleware -> this allows api to be called with react frontend
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # For development, allow all origins. In production, restrict this.
+    allow_origins=["*"],  # adjust for production
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# set/load environment variables -> edit this for production 
-# Initialize Pinecone client
-pc = Pinecone(api_key=os.getenv("PINECONE_API_KEY"))
+# ── Environment / Keys ─────────────────────────────────────────────────────────
+# Make sure you've set LLAMA_CLOUD_API_KEY in your env:
+#   export LLAMA_CLOUD_API_KEY="llx-..."
+os.environ["LLAMA_CLOUD_API_KEY"] = os.getenv("LLAMA_CLOUD_API_KEY")
+openai.api_key = os.getenv("OPENAI_API_KEY")
 
-# Set up components
-INDEX_NAME = "alloraproduction"
-embeddings = OpenAIEmbeddings(openai_api_key=os.getenv("OPENAI_API_KEY"),
-                              model="text-embedding-3-large")
 
-# Connect to existing Pinecone index
+# ── Initialize your managed index + query engine ──────────────────────────────
 try:
-    # Get Pinecone index object
-    index = pc.Index(INDEX_NAME)
-    
-    # Create vector store directly with index
-    vectorstore = PineconeVectorStore(
-        index=index,
-        embedding=embeddings,
-        text_key="text"  # Match your index's text field key
+    # Connect by index name or pipeline ID:
+    INDEX_NAME = "allora_production"  # your existing LlamaCloud index name
+    index = LlamaCloudIndex(
+        name=INDEX_NAME,               
+        project_name="Default",        
     )
+    # Build a QueryEngine: does retrieval + LLM-synthesis in one call :contentReference[oaicite:2]{index=2}
+    query_engine = index.as_query_engine(similarity_top_k=5)
 except Exception as e:
-    raise RuntimeError(f"Error connecting to Pinecone index: {str(e)}")
+    raise RuntimeError(f"Error connecting to LlamaCloud index: {e}")
 
-# Create retrieval QA chain
-qa = RetrievalQA.from_chain_type(
-    llm=OpenAI(temperature=0, openai_api_key=os.getenv("OPENAI_API_KEY")),
-    chain_type="stuff",
-    retriever=vectorstore.as_retriever(),
-    return_source_documents=True
-)
-
-# Request/Response models
+# ── Pydantic models here
 class ChatRequest(BaseModel):
     message: str
 
@@ -60,6 +48,7 @@ class ChatResponse(BaseModel):
     response: str
     sources: List[str]
 
+# Health Check
 @app.get("/")
 async def root():
     return {"Ok"}
@@ -67,15 +56,26 @@ async def root():
 @app.post("/chat", response_model=ChatResponse)
 async def chat_endpoint(request: ChatRequest):
     try:
-        result = qa.invoke({"query": request.message})
-        sources = list(set([doc.metadata.get("source", "") for doc in result["source_documents"]]))
-        return {
-            "response": result["result"],
-            "sources": sources
-        }
+        # 1) run RAG query
+        resp = query_engine.query(request.message)
+        # 2) extract the answer text
+        answer = getattr(resp, "response", str(resp))
+        # 3) pull out unique source filenames/URLs from retrieved nodes
+        sources = []
+        for src in getattr(resp, "source_nodes", []):
+            md = getattr(src, "node", src).metadata
+            # adjust key if you stored it under a different field
+            if "source" in md:
+                sources.append(md["source"])
+        sources = list(set(sources))
+
+        return ChatResponse(response=answer, sources=sources)
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+# ── Uvicorn runner ────────────────────────────────────────────────────────────
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=int(os.getenv("PORT",8000))) # may need to edit this for production
+    uvicorn.run(app, host="0.0.0.0", port=int(os.getenv("PORT", 8000)))
+    
