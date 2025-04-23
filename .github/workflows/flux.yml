@@ -36,7 +36,7 @@ jobs:
         env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
           ECR_REPOSITORY: allora-chatbot-rag-model
-          IMAGE_BASE_PATH: API
+          IMAGE_BASE_PATH: .
           VERSION: ${{ env.VERSION }}
         run: |
           IMAGE_TAG="${GITHUB_SHA:0:8}"
