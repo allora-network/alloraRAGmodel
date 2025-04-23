@@ -4,6 +4,8 @@ We're building a RAG Chatbot powered by **GPT-4** to answer questions about Allo
 
 ---
 
+Documention needs to be updated (4/23/25)
+
 ## Description
 
 Our Q&A chat project uses a Pinecone vector database called **alloraproduction**. Data is converted into **3072-dimensional vectors** using the OpenAI `text-embedding-3-large` model. A LangChain workflow connects this database with GPT-4. When a user submits a question via a FastAPI POST endpoint, the following happens:
