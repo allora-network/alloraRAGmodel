@@ -21,10 +21,15 @@ app.add_middleware(
 )
 
 # ── Environment / Keys ─────────────────────────────────────────────────────────
-# Make sure you've set LLAMA_CLOUD_API_KEY in your env:
-#   export LLAMA_CLOUD_API_KEY="llx-..."
-os.environ["LLAMA_CLOUD_API_KEY"] = os.getenv("LLAMA_CLOUD_API_KEY")
-openai.api_key = os.getenv("OPENAI_API_KEY")
+#  set LLAMA_CLOUD_API_KEY in the env:
+
+llama_key = os.getenv("LLAMA_CLOUD_API_KEY")
+if not llama_key:
+    raise RuntimeError("Please set LLAMA_CLOUD_API_KEY in your environment")
+openai_key = os.getenv("OPENAI_API_KEY")
+if not openai_key:
+    raise RuntimeError("Please set OPENAI_API_KEY in your environment")
+
 
 
 # ── Initialize your managed index + query engine ──────────────────────────────
