@@ -3,7 +3,6 @@ name: build-and-push-docker-image
 on:
   push:
     branches:
-      - chore/Dockerize-Python
       - master
 
 permissions:
