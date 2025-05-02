@@ -63,6 +63,12 @@ class ChatResponse(BaseModel):
     response: str
     sources: List[str]
 
+
+# -- Health Check ──────────────────────────────────────────────────────
+@app.get("/")
+async def root():
+    return {"Ok"}
+
 # ── Heuristic thresholds ──────────────────────────────────────────────────────
 THRESH = 0.85
 MARGIN = 0.10
