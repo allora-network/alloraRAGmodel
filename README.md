@@ -4,15 +4,17 @@ We're building a RAG Chatbot powered by **GPT-4** to answer questions about Allo
 
 ---
 
+Documention needs to be updated (4/23/25)
+
 ## Description
 
-Our Q&A chat project uses a Pinecone vector database called **alloraproduction**. Data is converted into **3072-dimensional vectors** using the OpenAI `text-embedding-3-large` model. A LangChain workflow connects this database with GPT-4. When a user submits a question via a FastAPI POST endpoint, the following happens:
+Our Q&A chat project uses a LlamaCloud vector database called **allora_production**. Data is converted into **3072-dimensional vectors** using the OpenAI `text-embedding-3-large` model. Our LlamaIndex connects this database with GPT-4o. When a user submits a question via a FastAPI POST endpoint, the following happens:
 
 1. **Receive Question:** The user's question is received as plain text.
 2. **Convert to Vector:** The question is embedded into a vector.
-3. **Generate Response:** GPT-4, informed by context retrieved from Pinecone, generates a helpful answer.
+3. **Generate Response:** GPT-4o, informed by context retrieved from LlamaCloud, generates a helpful answer.
 
-This workflow effectively bridges the user's query with GPT-4 by gathering relevant background information from our stored context.
+This workflow effectively bridges the user's query with GPT-4o by gathering relevant background information from our stored context.
 
 ---
 
@@ -28,7 +30,8 @@ This workflow effectively bridges the user's query with GPT-4 by gathering relev
 - [allora-offchain-node](https://github.com/allora-network/allora-offchain-node)
 - [coin prediction worker](https://github.com/allora-network/basic-coin-prediction-node)
 - [coin prediction reputer](https://github.com/allora-network/coin-prediction-reputer)
-- autogluon-prediction
+- [autogluon-prediction](https://github.com/allora-network/autogluon-prediction)
+- [allora-docs](https://github.com/allora-network/docs)
 
 ### Other Documentation
 - [CometBFT Docs](https://docs.cometbft.com/v0.38/)
@@ -38,7 +41,7 @@ This workflow effectively bridges the user's query with GPT-4 by gathering relev
 
 ## Updating the Knowledge Context
 
-To add new documentation, you must add additional data embeddings to the **alloraproduction** Pinecone database. Follow these steps:
+To add new documentation, you must add additional data embeddings to the **allora_production** Pinecone database. Follow these steps:
 
 1. **Split & Vectorize:**  
    Use the LangChain library (or another method that adheres to 3072 dimensions and uses `text-embedding-3-large`) to split and vectorize your data.
