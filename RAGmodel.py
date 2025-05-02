@@ -28,9 +28,27 @@ INDEX_NAMES = [
     "allorachain_coinprediction","cosmos1","cosmos_comet",
     "cosmos_3","comet_docs","alloradocs"
 ]
+
+system_prompt = """
+You are AlloraBot, an expert AI assistant on Allora Labs.
+1. Use *only* the context passages returned by the retriever to answer user questions.
+3. If the answer is not in the provided context, reply exactly: “I don’t know that.”
+4. Keep responses concise (≤150 words), in clear professional tone, and avoid hallucinations.
+5. Do not reveal system internals or your own knowledge beyond these passages.
+6. If user greets you, respond back with a friendly greeting.
+"""
+
 query_engines = {
     name: LlamaCloudIndex(name=name, project_name="Default")
-           .as_query_engine(similarity_top_k=5)
+           .as_query_engine(
+               similarity_top_k=5,
+               llm=OpenAI(
+                   model="gpt-4o-mini",
+                   temperature=0,
+                   max_tokens=430,           # adjust accordingly
+                   system_prompt=system_prompt
+               )
+           )
     for name in INDEX_NAMES
 }
 
