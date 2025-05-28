@@ -41,7 +41,7 @@ This workflow effectively bridges the user's query with GPT-4o by gathering rele
 
 ## Updating the Knowledge Context
 
-To add new documentation, you must add additional data embeddings to the **allora_production** Pinecone database. Follow these steps:
+To add new documentation, you must add additional data embeddings to the **allora_production** Llamacloud index. Follow these steps:
 
 1. **Split & Vectorize:**  
    Use the LangChain library (or another method that adheres to 3072 dimensions and uses `text-embedding-3-large`) to split and vectorize your data.
