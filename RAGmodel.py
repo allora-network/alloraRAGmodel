@@ -35,8 +35,8 @@ app.add_middleware(
 # Environment Variables & API Keys
 # ------------------------------------------------------------------------------
 # Ensure these are set in your environment or a .env file (if using python-dotenv)
-os.environ["LLAMA_CLOUD_API_KEY"] = "llx-"
-os.environ["OPENAI_API_KEY"] = "sk-proj--"
+os.environ["LLAMA_CLOUD_API_KEY"] = 
+os.environ["OPENAI_API_KEY"] = 
 
 
 if not os.getenv("LLAMA_CLOUD_API_KEY") or not os.getenv("OPENAI_API_KEY"):
@@ -52,8 +52,8 @@ INDEX_NAMES = [
     "cosmos_3", "comet_docs", "alloradocs"
 ]
 
-RETRIEVAL_TOP_K = 3  # Number of documents to fetch from *each* index
-SYNTHESIS_MAX_NODES = 7 # Max total unique nodes to pass to the final LLM for synthesis
+RETRIEVAL_TOP_K = 10  # Number of documents to fetch from *each* index
+SYNTHESIS_MAX_NODES = 10 # Max total unique nodes to pass to the final LLM for synthesis
 
 # ------------------------------------------------------------------------------
 # System Prompt for "Allie"
@@ -116,7 +116,7 @@ try:
         synthesis_llm = OpenAI(
             model="gpt-4o-mini",
             temperature=0,
-            max_tokens=430,  # Max tokens for Allie's output response
+            max_tokens=400,  # Max tokens for Allie's output response
             system_prompt=system_prompt
         )
 
@@ -196,7 +196,7 @@ async def chat_endpoint(req: ChatRequest):
     try:
         # t_start = time.time() # Start timer
 
-        # 1️⃣ Parallel Retrieval from all indexes
+        # 1 Parallel Retrieval from all indexes
         retrieval_tasks = [
             retrieve_from_one_index(name, retriever_instance, req.message, request_id)
             for name, retriever_instance in retrievers.items()
@@ -209,7 +209,7 @@ async def chat_endpoint(req: ChatRequest):
             # print(f"[{request_id}] Result from retriever task {i}: {len(res_list)} nodes.") # Verbose
 
 
-        # 2️⃣ Aggregate, Deduplicate, and Rank Nodes
+        # 2 Aggregate, Deduplicate, and Rank Nodes
         all_retrieved_nodes: List[NodeWithScore] = []
         if results_from_retrievers:
             for node_list in results_from_retrievers:
