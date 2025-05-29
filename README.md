@@ -68,53 +68,6 @@ To add new documentation, you must add additional data embeddings to the **allor
 - **Generate Embeddings & Vector Store:**  
   Creates text embeddings with OpenAI and stores them in a Pinecone vector store.
 
-```python
-# insert local path of your pdf here 
-
-pdf_path = ""
-curindex_name="alloraproduction"
-
-loader = PyMuPDFLoader(pdf_path)
-docs = loader.load()  # This returns a list of Document objects
-
-from langchain_text_splitters import RecursiveCharacterTextSplitter
-
-text_splitter = RecursiveCharacterTextSplitter(
-    chunk_size=250,
-    chunk_overlap=50
-)
-split_docs = text_splitter.split_documents(docs)
-
-# set/get our server account APIs here
-os.environ["OPENAI_API_KEY"] = ""
-os.environ["PINECONE_API_KEY"] = ""
-
-embeddings = OpenAIEmbeddings(model="text-embedding-3-large")
-
-# load our server account API here
-pc = Pinecone(api_key=os.getenv("PINECONE_API_KEY"))
-index = pc.Index("alloraproduction")
-
-vector_store = PineconeVectorStore.from_documents(
-    documents=split_docs,
-    embedding=embeddings,
-    index_name="alloraproduction"
-)
-```
-
-## Example: Splitting and Vectorizing GitHub Files
-
-### Process Overview
-
-- **Load Documents:**  
-  Clones a GitHub repository and filters for Markdown files using `GitLoader`.
-
-- **Split Documents:**  
-  Uses a language-aware splitter (`RecursiveCharacterTextSplitter.from_language`) configured for Python to break the documents into manageable chunks.
-
-- **Generate Embeddings & Store Vectors:**  
-  Converts the document chunks into vectors using the OpenAI `text-embedding-3-large` model and stores them in a Pinecone index.
-
 
 
 ## Example: Testing the Allora Chatbot Server
