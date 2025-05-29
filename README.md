@@ -1,6 +1,6 @@
 # Allora RAG Information Bot
 
-We're building a RAG Chatbot powered by **GPT-4** to answer questions about Allora Labs using content from our documentation, research papers, and codebase. The chatbot is accessible via Slack, Discord, and our documentation website.
+We're building an Agentic RAG Chatbot powered by **GPT-4** to answer questions about Allora Labs using content from our documentation, research papers, and codebase. The chatbot is accessible via Slack, Discord, and our documentation website.
 
 ---
 
