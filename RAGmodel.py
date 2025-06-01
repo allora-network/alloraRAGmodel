@@ -234,7 +234,7 @@ async def chat_endpoint(req: ChatRequest):
         print(f"[{request_id}] Total unique nodes for synthesis: {len(unique_nodes_for_synthesis)}")
 
 
-        # 3️⃣ Synthesize Final Response
+        # 3. Synthesize Final Response
         # The hardcoded response for "no nodes found" has been removed.
         # The LLM (via ResponseSynthesizer) will now always be called.
         # If unique_nodes_for_synthesis is empty, the LLM should use the system_prompt
