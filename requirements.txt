@@ -3,3 +3,9 @@ fastapi
 pydantic
 openai
 uvicorn
+httpx
+Pillow
+requests
+matplotlib
+numpy
+slack-sdk
