@@ -178,7 +178,7 @@ async def send_slack_response(channel: str, text: str, thread_ts: Optional[str] 
     # Prepare the message payload
     payload = {
         "channel": channel,
-        "text": text,  # Fallback text for notifications
+        # "text": text,  # Fallback text for notifications
         "blocks": [],
     }
     
@@ -187,6 +187,8 @@ async def send_slack_response(channel: str, text: str, thread_ts: Optional[str] 
         payload["thread_ts"] = thread_ts
     elif message_ts and not channel.startswith('D'):  # Use message_ts as thread_ts for channel responses
         payload["thread_ts"] = message_ts
+
+    text = re.sub(r'```[a-zA-Z0-9_]*\n', '```', text)  # Remove syntax identifiers from code fences
 
     payload["blocks"].extend([{
         "type": "section",
@@ -225,8 +227,7 @@ async def send_slack_response(channel: str, text: str, thread_ts: Optional[str] 
                     }
                 })
 
-    print("PAYLOAD")
-    pretty_print(payload)
+    logger.debug(f"Slack message payload: {payload}")
 
     async with httpx.AsyncClient() as client:
         response = await client.post(

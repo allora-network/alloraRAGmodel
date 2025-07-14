@@ -70,6 +70,6 @@ if __name__ == "__main__":
         format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
     )
 
-    asyncio.gather(
+    asyncio.run(
         create_index('allora_offchain_node', '~/projects/allora/allora-offchain-node')
     )

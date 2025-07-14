@@ -1,4 +1,8 @@
-import logging, time, os, asyncio, json
+import asyncio
+import json
+import logging
+import os
+import time
 from typing import List, Optional, Dict, Any
 from pydantic import BaseModel
 from fastapi import FastAPI, Response, Request
@@ -7,6 +11,7 @@ from fastapi.responses import JSONResponse
 
 from llm import Agent
 from slack import process_slack_message
+from exceptions import AlloraAgentError, SlackIntegrationError, ConfigurationError
 
 logger = logging.getLogger("uvicorn.error") # -> debugging purposes
 
@@ -29,13 +34,31 @@ class PrettyJSONResponse(JSONResponse):
             separators=(",", ": "),
         ).encode("utf-8")
 
+# ── Environment Configuration ──────────────────────────────────────────────
+DEBUG_MODE = os.getenv("DEBUG", "false").lower() == "true"
+ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS", "http://localhost:3000,http://localhost:8000").split(",")
+
+# Validate required environment variables
+REQUIRED_ENV_VARS = [
+    "LLAMA_CLOUD_API_KEY",
+    "LLAMA_CLOUD_ORG_ID", 
+    "OPENAI_API_KEY",
+    "SLACK_BOT_TOKEN"
+]
+
+missing_vars = [var for var in REQUIRED_ENV_VARS if not os.getenv(var)]
+if missing_vars:
+    raise ConfigurationError(f"Missing required environment variables: {', '.join(missing_vars)}")
+
 # ── FastAPI setup ───────────────────────────────────────────────────────────
-app = FastAPI(debug=True, default_response_class=PrettyJSONResponse)
+app = FastAPI(debug=DEBUG_MODE, default_response_class=PrettyJSONResponse)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"], allow_credentials=True,
-    allow_methods=["*"], allow_headers=["*"],
+    allow_origins=ALLOWED_ORIGINS,
+    allow_credentials=True,
+    allow_methods=["GET", "POST"],
+    allow_headers=["*"],
 )
 
 
@@ -51,29 +74,37 @@ docs_agent = Agent(index_names=["alloradocs"], max_tokens=2000, enable_chart_gen
 
 @app.post("/chat")
 async def chat_endpoint(req: ChatRequest):
-    logger.info(f"/chat (health check)")
+    logger.info(f"/chat endpoint hit")
     t0 = time.time()
 
     request_id = id(req)  # Simple request ID for tracking
     logger.info(f"[{request_id}] Starting chat request: '{req.message[:50]}{'...' if len(req.message) > 50 else ''}'")
 
-    answer, sources, image_paths = await docs_agent.answer_allora_query(request_id, req.message)
+    try:
+        answer, sources, image_paths = await docs_agent.answer_allora_query(request_id, req.message)
 
-    total_time = time.time() - t0
-    logger.info(f"[{request_id}] Request completed - Total time: {total_time:.2f}s")
+        total_time = time.time() - t0
+        logger.info(f"[{request_id}] Request completed - Total time: {total_time:.2f}s")
+        
+        # Return response (will be pretty-printed automatically)
+        response_data = {
+            "response": answer,
+            "sources": sources,
+            "query_time": f"{total_time:.2f}s",
+            "request_id": str(request_id)
+        }
+        
+        # Add image info if available
+        response_data["image_paths"] = image_paths
+        
+        return response_data
     
-    # Return response (will be pretty-printed automatically)
-    response_data = {
-        "response": answer,
-        "sources": sources,
-        "query_time": f"{total_time:.2f}s",
-        "request_id": str(request_id)
-    }
-    
-    # Add image info if available
-    response_data["image_paths"] = image_paths
-    
-    return response_data
+    except AlloraAgentError as e:
+        logger.error(f"[{request_id}] Agent error: {str(e)}")
+        return {"error": "I encountered an issue processing your request. Please try again.", "request_id": str(request_id)}
+    except Exception as e:
+        logger.error(f"[{request_id}] Unexpected error: {str(e)}")
+        return {"error": "An unexpected error occurred. Please try again later.", "request_id": str(request_id)}
 
 
 # ── Slack bot ──────────────────────────────────────────────────────
@@ -116,8 +147,14 @@ async def slack_endpoint(request: Request):
         logger.warning(f"[{request_id}] Unhandled request type: {json_body.get('type')}")
         return Response(status_code=200)
         
+    except SlackIntegrationError as e:
+        logger.error(f"Slack integration error: {str(e)}")
+        return Response(status_code=400)
+    except AlloraAgentError as e:
+        logger.error(f"Agent error processing Slack request: {str(e)}")
+        return Response(status_code=500)
     except Exception as e:
-        logger.error(f"Error processing Slack request: {str(e)}")
+        logger.error(f"Unexpected error processing Slack request: {str(e)}")
         return Response(status_code=500)
 
 

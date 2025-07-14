@@ -3,6 +3,7 @@ Chart generation tool for LlamaIndex FunctionAgent
 Provides standalone chart generation functionality based on RAG content analysis
 """
 
+import asyncio
 import logging
 import os
 import tempfile
@@ -31,7 +32,7 @@ class ChartGeneratorTool:
             self.available = False
             self.logger.warning(f"Chart generation dependencies not available: {e}")
     
-    def generate_chart(self, query: str, rag_content: str, sources: List[str]) -> str:
+    async def generate_chart(self, query: str, rag_content: str, sources: List[str]) -> str:
         """Generate a chart using Python code execution based on RAG data
         
         Args:
@@ -55,7 +56,7 @@ class ChartGeneratorTool:
             self.logger.debug(f"Generated Python code: {python_code[:200]}...")
             
             # Execute Python code using subprocess
-            chart_path = self._execute_chart_code(python_code, query)
+            chart_path = await self._execute_chart_code(python_code, query)
             
             if chart_path:
                 self.logger.info(f"Chart generated successfully: {chart_path}")
@@ -67,7 +68,7 @@ class ChartGeneratorTool:
             self.logger.error(f"Failed to generate chart: {str(e)}")
             return f"Failed to generate chart: {str(e)}"
     
-    def generate_parametric_chart(self, x_label: str, y_label: str, data_points: str, chart_type: str) -> str:
+    async def generate_parametric_chart(self, x_label: str, y_label: str, data_points: str, chart_type: str) -> str:
         """Generate a chart with specific parameters
         
         Args:
@@ -96,7 +97,7 @@ class ChartGeneratorTool:
             self.logger.debug(f"Generated Python code: {python_code[:200]}...")
             
             # Execute Python code using subprocess
-            chart_path = self._execute_chart_code(python_code, f"{chart_type}_chart")
+            chart_path = await self._execute_chart_code(python_code, f"{chart_type}_chart")
             
             if chart_path:
                 self.logger.info(f"Chart generated successfully: {chart_path}")
@@ -570,7 +571,7 @@ plt.close()
 print("Chart saved to /tmp/comparison_chart.png")
 '''
     
-    def _execute_chart_code(self, python_code: str, query: str) -> Optional[str]:
+    async def _execute_chart_code(self, python_code: str, query: str) -> Optional[str]:
         """Execute Python chart code and return the generated file path"""
         try:
             # Create a temporary Python file
@@ -578,18 +579,24 @@ print("Chart saved to /tmp/comparison_chart.png")
                 f.write(python_code)
                 script_path = f.name
             
-            # Execute the Python script
-            result = subprocess.run(
-                ['python', script_path], 
-                capture_output=True, 
-                text=True, 
-                timeout=30
+            # Execute the Python script using async subprocess
+            process = await asyncio.create_subprocess_exec(
+                'python', script_path,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE
             )
+            
+            try:
+                stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=30.0)
+            except asyncio.TimeoutError:
+                process.kill()
+                await process.wait()
+                raise Exception("Chart generation timed out after 30 seconds")
             
             # Clean up script file
             os.unlink(script_path)
             
-            if result.returncode == 0:
+            if process.returncode == 0:
                 # Look for the generated chart file
                 chart_paths = ['/tmp/parametric_chart.png', '/tmp/reward_chart.png', '/tmp/metrics_chart.png', '/tmp/workflow_chart.png', '/tmp/comparison_chart.png', '/tmp/generic_chart.png']
                 for path in chart_paths:
@@ -602,7 +609,8 @@ print("Chart saved to /tmp/comparison_chart.png")
                 self.logger.warning("Chart code executed but no output file found")
                 return None
             else:
-                self.logger.error(f"Chart code execution failed: {result.stderr}")
+                error_msg = stderr.decode() if stderr else "Unknown error"
+                self.logger.error(f"Chart code execution failed: {error_msg}")
                 return None
                 
         except Exception as e:

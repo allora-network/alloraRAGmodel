@@ -3,7 +3,6 @@ import asyncio
 import os
 from typing import List, Tuple
 
-from httpx import request
 from llama_cloud import ImageBlock
 from llama_index.core.tools import BaseTool
 from llama_index.llms.openai import OpenAI, OpenAIResponses
@@ -15,6 +14,7 @@ from tool_chart import create_chart_tool
 from tool_openai_image import image_tool
 from tool_rag import create_rag_tools
 from utils import pretty_print
+from exceptions import RAGQueryError, ToolExecutionError
 
 
 class Agent:
@@ -56,7 +56,7 @@ class Agent:
                 model="gpt-4o",
                 temperature=0.3,  # Lower temperature for more focused, consistent responses
                 max_tokens=max_tokens * 2,  # Increase max tokens for more verbose responses
-                reuse_client=False,
+                reuse_client=True,
             ),
             system_prompt=sysprompt,
             memory=ChatMemoryBuffer.from_defaults(token_limit=8000),
@@ -111,9 +111,15 @@ class Agent:
             
             return answer, sources, image_paths
             
+        except ToolExecutionError as e:
+            self.logger.error(f"[{request_id}] Tool execution error: {str(e)}")
+            return "I encountered an issue with one of my tools while processing your request. Please try again.", [], []
+        except RAGQueryError as e:
+            self.logger.error(f"[{request_id}] RAG query error: {str(e)}")
+            return "I had trouble accessing my knowledge base. Please try rephrasing your question.", [], []
         except Exception as e:
-            self.logger.error(f"[{request_id}] Error processing query: {str(e)}")
-            return f"[{request_id}] I encountered an error processing your request: {str(e)}", [], []
+            self.logger.error(f"[{request_id}] Unexpected error processing query: {str(e)}")
+            return "I encountered an unexpected error. Please try again later.", [], []
 
     def _extract_response_text(self, response, request_id: int) -> str:
         """Extract response text with robust fallback logic"""
