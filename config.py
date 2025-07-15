@@ -54,6 +54,7 @@ class ChartConfig:
 @dataclass
 class SlackConfig:
     max_sources_displayed: int = 3
+    bot_token: str = ""  # Will be populated from environment
 
 
 @dataclass
@@ -150,6 +151,7 @@ class Config:
         
         slack_config = SlackConfig(
             max_sources_displayed=int(os.getenv('SLACK_MAX_SOURCES_DISPLAYED', '3')),
+            bot_token=env_values['slack_bot_token'],
         )
         
         server_config = ServerConfig(

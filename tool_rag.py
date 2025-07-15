@@ -10,12 +10,12 @@ indices = {
     "alloradocs": {
         "description": "Search and retrieve information from the public-facing Allora documentation",
     },
-    "allora_chain": {
-        "description": "Search and retrieve information from open-source Allora code",
-    },
     "allora_production": {
         "description": "Search and retrieve information from open-source Allora code",
-    }
+    },
+    "enablement": {
+        "description": "Search and retrieve information about internal processes, procedures, initiatives, and goals at Allora Labs"
+    },
 }
 
 def create_rag_tools(index_names: list[str], max_tokens: int) -> list[BaseTool]:

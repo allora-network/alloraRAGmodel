@@ -16,6 +16,8 @@ from llm import Agent
 from slack import process_slack_message
 from exceptions import AlloraAgentError, SlackIntegrationError, ConfigurationError
 from config import get_config
+from slack_types import parse_slack_request
+from utils import pretty_print
 
 logger = logging.getLogger("uvicorn.error") # -> debugging purposes
 
@@ -131,51 +133,40 @@ async def chat_endpoint(request: Request, req: ChatRequest):
 async def slack_endpoint(request: Request):
     try:
         json_body = await request.json()
-        request_id = id(request)
+        request_id = str(id(request))
         logger.info(f"/slack [{request_id}] {json_body.get('type', 'unknown')}")
         
-        # Handle URL verification challenge
-        if json_body.get("type") == "url_verification":
-            challenge = json_body.get("challenge")
-            logger.info(f"[{request_id}] URL verification challenge received")
-            return Response(content=challenge, headers={"Content-Type": "text/plain"}, status_code=200)
+        # Parse the Slack request
+        slack_request, should_process = parse_slack_request(json_body, request_id)
         
-        # Handle event callbacks
-        if json_body.get("type") == "event_callback":
-            event_data = json_body.get("event", {})
-            event_type = event_data.get("type")
-            
-            # Ignore bot messages to prevent loops
-            if event_data.get("bot_id") or event_data.get("subtype") == "bot_message":
-                logger.info(f"[{request_id}] Ignoring bot message")
-                return Response(status_code=200)
-            
-            # Handle direct messages (message.im) and mentions (app_mention)
-            if event_type in ["message", "app_mention"]:
-                channel = event_data.get("channel")
-                if channel is None:
-                    raise Exception("no channel specified")
-
-                slack_agent = Agent(
-                    session_id=channel + "." + event_data.get("ts"),
-                    index_names=["alloradocs", "allora_chain", "allora_production"],
-                    max_tokens=16384,
-                )
-
-                # Start async processing (don't await to return 200 quickly)
-                asyncio.create_task(process_slack_message(event_data, str(request_id), slack_agent))
-                return Response(status_code=200)
-            
-            logger.info(f"[{request_id}] Unhandled event type: {event_type}")
+        # Handle URL verification challenge
+        if slack_request.request_type == "url_verification":
+            return Response(content=slack_request.challenge, headers={"Content-Type": "text/plain"}, status_code=200)
+        
+        # If we shouldn't process this message, return 200 immediately
+        if not should_process:
             return Response(status_code=200)
         
-        logger.warning(f"[{request_id}] Unhandled request type: {json_body.get('type')}")
+        # Handle processable messages
+        if slack_request.request_type == "event_callback":
+            slack_agent = Agent(
+                session_id=slack_request.session_id,
+                index_names=["enablement", "alloradocs", "allora_chain", "allora_production"],
+                max_tokens=16384,
+            )
+
+            # Start async processing (don't await to return 200 quickly)
+            asyncio.create_task(process_slack_message(slack_request, slack_agent))
+            return Response(status_code=200)
+        
+        # Shouldn't reach here, but return 200 to be safe
         return Response(status_code=200)
         
     except SlackIntegrationError as e:
         logger.error(f"Slack integration error: {str(e)}")
         return Response(status_code=400)
     except AlloraAgentError as e:
+        pretty_print(e)
         logger.error(f"Agent error processing Slack request: {str(e)}")
         return Response(status_code=500)
     except Exception as e:

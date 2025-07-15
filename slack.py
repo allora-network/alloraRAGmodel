@@ -9,46 +9,31 @@ from slack_sdk import WebClient
 from slack_sdk.errors import SlackApiError
 from utils import pretty_print
 from config import get_config
+from slack_types import SlackRequest
 
 logger = logging.getLogger("uvicorn.error")
 
-async def process_slack_message(event: Dict[str, Any], request_id: str, agent):
+async def process_slack_message(slack_request: SlackRequest, agent):
     """Process Slack messages asynchronously"""
     
     try:
-        channel = event.get("channel")
-        if channel is None:
-            raise NoChannelSpecified()
-
-        user = event.get("user")
-        text = event.get("text", "")
-        thread_ts = event.get("thread_ts")
-        message_ts = event.get("ts")
-        event_type = event.get("type")
-        
-        logger.info(f"[{request_id}] Processing {event_type} from user {user} in channel {channel}")
-        
-        # Determine if this is a DM or channel mention
-        is_dm = channel.startswith("D")
-        is_mention = event_type == "app_mention"
-        
         # Extract clean message text
-        clean_text = extract_message_text(text, is_mention)
+        clean_text = extract_message_text(slack_request.text, slack_request.is_mention)
         
         if not clean_text.strip():
-            logger.info(f"[{request_id}] Empty message after cleaning, skipping")
+            logger.info(f"[{slack_request.request_id}] Empty message after cleaning, skipping")
             return
         
         # Get response from RAG system
-        logger.info(f"[{request_id}] Querying RAG system: '{clean_text[:50]}{'...' if len(clean_text) > 50 else ''}'")
+        logger.info(f"[{slack_request.request_id}] Querying RAG system: '{clean_text[:50]}{'...' if len(clean_text) > 50 else ''}'")
         
         t0 = time.time()
-        answer, sources, image_paths = await agent.answer_allora_query(request_id, clean_text)
+        answer, sources, image_paths = await agent.answer_allora_query(slack_request.request_id, clean_text)
         query_time = time.time() - t0
 
-        logger.info(f"[{request_id}] Raw answer type: {type(answer)}")
-        logger.info(f"[{request_id}] Raw answer value: '{answer}'")
-        logger.info(f"[{request_id}] Raw answer repr: {repr(answer)}")
+        logger.info(f"[{slack_request.request_id}] Raw answer type: {type(answer)}")
+        logger.info(f"[{slack_request.request_id}] Raw answer value: '{answer}'")
+        logger.info(f"[{slack_request.request_id}] Raw answer repr: {repr(answer)}")
         
         pretty_print({
             "answer": answer,
@@ -56,35 +41,32 @@ async def process_slack_message(event: Dict[str, Any], request_id: str, agent):
         })
         
         # Format response for Slack
-        formatted_response = format_slack_response(answer, sources, is_dm)
+        formatted_response = format_slack_response(answer, sources, slack_request.is_dm)
         
         # Send response with optional images
         await send_slack_response(
-            channel=channel,
+            channel=slack_request.channel,
             text=formatted_response,
-            thread_ts=thread_ts if not is_dm else None,
-            message_ts=message_ts,
+            thread_ts=slack_request.thread_ts if not slack_request.is_dm else None,
+            message_ts=slack_request.message_ts,
             image_paths=image_paths,
         )
         
-        logger.info(f"[{request_id}] Response sent - Query time: {query_time:.2f}s")
+        logger.info(f"[{slack_request.request_id}] Response sent - Query time: {query_time:.2f}s")
 
-    except NoChannelSpecified as e:
-        logger.error("no channel specified in slack event")
-        
     except Exception as e:
-        logger.error(f"[{request_id}] Error processing message: {str(e)}")
+        logger.error(f"[{slack_request.request_id}] Error processing message: {str(e)}")
         
         # Send error response to user
         try:
             await send_slack_response(
-                channel=event["channel"],
+                channel=slack_request.channel,
                 text=f"Sorry, I encountered an error processing your request. Please try again later.  ```{str(e)}```",
-                thread_ts=event.get("thread_ts") if not event.get("channel", "").startswith("D") else None,
-                message_ts=event.get("ts")
+                thread_ts=slack_request.thread_ts if not slack_request.is_dm else None,
+                message_ts=slack_request.message_ts
             )
         except Exception as send_error:
-            logger.error(f"[{request_id}] Failed to send error response: {str(send_error)}")
+            logger.error(f"[{slack_request.request_id}] Failed to send error response: {str(send_error)}")
 
 
 def extract_message_text(text: str, is_mention: bool) -> str:
@@ -199,15 +181,11 @@ async def send_slack_response(channel: str, text: str, thread_ts: Optional[str] 
     # Handle images - upload local files, embed URLs directly
     for i, image_path in enumerate(image_paths):
         if image_path.startswith('http'):
-            # It's a URL (DALL-E image) - add directly to blocks
+            # It's a URL (DALL-E or chart image) - add directly to blocks
             payload["blocks"].append({
                 "type": "image",
                 "image_url": image_path,
-                "title": {
-                    "type": "plain_text",
-                    "text": f"Generated Image {i+1}",
-                    "emoji": True,
-                },
+                "alt_text": f"Generated Image {i+1}"
             })
         elif os.path.exists(image_path):
             # It's a local file (chart) - upload to Slack
@@ -305,5 +283,3 @@ async def send_slack_response(channel: str, text: str, thread_ts: Optional[str] 
 #     # (Implementation omitted for brevity - can restore if needed)
 
 
-class NoChannelSpecified(Exception):
-    pass

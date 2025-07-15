@@ -4,11 +4,11 @@ Provides standalone chart generation functionality based on RAG content analysis
 """
 
 import logging
-from os.path import basename
-import tempfile
+import os
+import uuid
+from pathlib import Path
 from llama_cloud import ImageBlock
 from llama_index.core.llms import ChatMessage
-from urllib.parse import urljoin
 import matplotlib
 import matplotlib.pyplot as plt
 from typing import Annotated, Callable, List, Literal, Optional
@@ -39,13 +39,11 @@ class ChartGeneratorTool:
                 return "Invalid data points format. Use 'x1,y1;x2,y2;x3,y3'"
             
             # Generate chart directly in-process
-            chart_path = await self._generate_chart(x_label, y_label, parsed_data, chart_type)
+            chart_path, chart_url = await self._generate_chart(x_label, y_label, parsed_data, chart_type)
             
-            if chart_path:
-                path = urljoin(self.config.base_url, self.config.image_dir)
-                path = urljoin(path, basename(chart_path))
-                logger.info(f"Chart generated successfully: {chart_path} ({path})")
-                return path
+            if chart_path and chart_url:
+                logger.info(f"Chart generated successfully: {chart_path} -> {chart_url}")
+                return chart_url
             else:
                 return "Failed to generate chart"
                 
@@ -76,7 +74,7 @@ class ChartGeneratorTool:
             logger.error(f"Error parsing data points '{data_points}': {str(e)}")
             return []
     
-    async def _generate_chart(self, x_label: str, y_label: str, data_points: List[tuple], chart_type: Literal["bar", "line"]) -> Optional[str]:
+    async def _generate_chart(self, x_label: str, y_label: str, data_points: List[tuple], chart_type: Literal["bar", "line"]) -> tuple[Optional[str], Optional[str]]:
         # Create figure with configured size
         fig, ax = plt.subplots(figsize=self.config.chart.figure_size, dpi=self.config.chart.dpi)
 
@@ -104,13 +102,20 @@ class ChartGeneratorTool:
         # Improve layout
         plt.tight_layout()
 
-        # Save to temporary file
-        chart_path = tempfile.mktemp(suffix='.png')
-        plt.savefig(chart_path, dpi=self.config.chart.dpi, bbox_inches='tight')
+        # Generate unique filename and save to static directory
+        chart_filename = f"chart_{uuid.uuid4().hex[:8]}.png"
+        static_dir = Path("static/images")
+        static_dir.mkdir(parents=True, exist_ok=True)
+        chart_path = static_dir / chart_filename
+        
+        plt.savefig(str(chart_path), dpi=self.config.chart.dpi, bbox_inches='tight')
         plt.close()
 
-        logger.info(f"Parametric chart generated successfully: {chart_path}")
-        return chart_path
+        # Construct the public URL for the chart
+        chart_url = f"{self.config.base_url}/images/{chart_filename}"
+        
+        logger.info(f"Chart generated successfully: {chart_path} -> {chart_url}")
+        return str(chart_path), chart_url
 
 
 async def generate_chart(
@@ -120,7 +125,7 @@ async def generate_chart(
     chart_type: Annotated[Literal["bar", "line"], "Type of chart - either 'bar' or 'line'"],
 ):
     chart_generator = ChartGeneratorTool()
-    return chart_generator.generate_chart(x_label, y_label, data_points, chart_type)
+    return await chart_generator.generate_chart(x_label, y_label, data_points, chart_type)
 
 chart_tool = FunctionTool.from_defaults(
     fn=generate_chart,
