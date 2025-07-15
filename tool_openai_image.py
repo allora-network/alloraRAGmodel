@@ -1,29 +1,14 @@
 import os
 from llama_index.core.tools import FunctionTool
-from llama_index.llms.openai import OpenAI
 import openai
-import requests
-import asyncio
+from config import get_config
 
 # Set up OpenAI API key
-# os.environ["OPENAI_API_KEY"] = "your-openai-api-key"
-openai.api_key = os.environ["OPENAI_API_KEY"]
+config = get_config()
+openai.api_key = config.openai_api_key
 
 # Define the custom image generation tool
-def generate_image(prompt: str, model: str = "dall-e-3", n: int = 1, size: str = "1024x1024", quality: str = "standard") -> list[str]:
-    """
-    Generate images using OpenAI's DALL·E API based on a text prompt.
-
-    Args:
-        prompt (str): The text prompt to generate the image.
-        model (str): The DALL·E model to use (default: dall-e-3).
-        n (int): Number of images to generate (default: 1).
-        size (str): Image size (e.g., "1024x1024").
-        quality (str): Image quality (e.g., "standard", "hd").
-
-    Returns:
-        list[str]: List of generated image URLs.
-    """
+def generate_image(prompt: str, model: str="dall-e-3", n: int=1, size: str="1024x1024", quality: str="standard") -> list[str]:
     try:
         response = openai.images.generate(
             model=model,

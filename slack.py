@@ -8,6 +8,7 @@ import httpx
 from slack_sdk import WebClient
 from slack_sdk.errors import SlackApiError
 from utils import pretty_print
+from config import get_config
 
 logger = logging.getLogger("uvicorn.error")
 
@@ -28,7 +29,7 @@ async def process_slack_message(event: Dict[str, Any], request_id: str, agent):
         logger.info(f"[{request_id}] Processing {event_type} from user {user} in channel {channel}")
         
         # Determine if this is a DM or channel mention
-        is_dm = channel.startswith('D')
+        is_dm = channel.startswith("D")
         is_mention = event_type == "app_mention"
         
         # Extract clean message text
@@ -79,7 +80,7 @@ async def process_slack_message(event: Dict[str, Any], request_id: str, agent):
             await send_slack_response(
                 channel=event["channel"],
                 text=f"Sorry, I encountered an error processing your request. Please try again later.  ```{str(e)}```",
-                thread_ts=event.get("thread_ts") if not event.get("channel", "").startswith('D') else None,
+                thread_ts=event.get("thread_ts") if not event.get("channel", "").startswith("D") else None,
                 message_ts=event.get("ts")
             )
         except Exception as send_error:
@@ -116,7 +117,8 @@ def format_slack_response(answer: str, sources: List[str], is_dm: bool) -> str:
     # Add sources if available
     if sources:
         source_text = "\n\n*Sources:*\n"
-        for i, source in enumerate(sources[:3], 1):  # Limit to 3 sources for readability
+        config = get_config()
+        for i, source in enumerate(sources[:config.slack.max_sources_displayed], 1):  # Limit sources for readability
             # Clean up source paths for better readability
             clean_source = source.split('/')[-1] if '/' in source else source
             source_text += f"• {clean_source}\n"
@@ -130,24 +132,20 @@ def format_slack_response(answer: str, sources: List[str], is_dm: bool) -> str:
     return formatted_response
 
 
-async def upload_file_to_slack(bot_token: str, channel: str, file_path: str, title: str, thread_ts: Optional[str] = None):
+async def upload_file_to_slack(channel: str, file_path: str, title: str):
     """Upload a local file to Slack"""
     logger.info(f"Uploading file to Slack: {file_path}")
-    
+
     try:
-        client = WebClient(token=bot_token)
-        
-        upload_params = {
-            "channel": channel,
-            "file": file_path,
-            "title": title,
-            "filename": os.path.basename(file_path)
-        }
-        
-        if thread_ts:
-            upload_params["thread_ts"] = thread_ts
-        
-        response = client.files_upload_v2(**upload_params)
+        config = get_config()
+        client = WebClient(token=config.slack.bot_token)
+
+        with open(file_path, 'rb') as f:
+            response = client.files_upload_v2(
+                filename=os.path.basename(file_path),
+                file=f,
+                channel=channel,
+            )
         
         if response.get("ok"):
             file_info = response.get("file", {})
@@ -185,7 +183,7 @@ async def send_slack_response(channel: str, text: str, thread_ts: Optional[str] 
     # Add thread timestamp for threaded responses
     if thread_ts:
         payload["thread_ts"] = thread_ts
-    elif message_ts and not channel.startswith('D'):  # Use message_ts as thread_ts for channel responses
+    elif message_ts and not channel.startswith("D"):  # Use message_ts as thread_ts for channel responses
         payload["thread_ts"] = message_ts
 
     text = re.sub(r'```[a-zA-Z0-9_]*\n', '```', text)  # Remove syntax identifiers from code fences

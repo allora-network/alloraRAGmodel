@@ -3,18 +3,23 @@ import json
 import logging
 import os
 import time
+import uuid
+from pathlib import Path
 from typing import List, Optional, Dict, Any
 from pydantic import BaseModel
 from fastapi import FastAPI, Response, Request
+from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from llm import Agent
 from slack import process_slack_message
 from exceptions import AlloraAgentError, SlackIntegrationError, ConfigurationError
+from config import get_config
 
 logger = logging.getLogger("uvicorn.error") # -> debugging purposes
 
+SESSION_COOKIE_NAME = 'session_id'
 
 # ── Requests/responses ───────────────────────────────────────────────────────────
 class ChatRequest(BaseModel):
@@ -34,32 +39,38 @@ class PrettyJSONResponse(JSONResponse):
             separators=(",", ": "),
         ).encode("utf-8")
 
-# ── Environment Configuration ──────────────────────────────────────────────
-DEBUG_MODE = os.getenv("DEBUG", "false").lower() == "true"
-ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS", "http://localhost:3000,http://localhost:8000").split(",")
-
-# Validate required environment variables
-REQUIRED_ENV_VARS = [
-    "LLAMA_CLOUD_API_KEY",
-    "LLAMA_CLOUD_ORG_ID", 
-    "OPENAI_API_KEY",
-    "SLACK_BOT_TOKEN"
-]
-
-missing_vars = [var for var in REQUIRED_ENV_VARS if not os.getenv(var)]
-if missing_vars:
-    raise ConfigurationError(f"Missing required environment variables: {', '.join(missing_vars)}")
+# ── Configuration Setup ──────────────────────────────────────────────
+# Initialize configuration (this will validate environment variables)
+config = get_config()
 
 # ── FastAPI setup ───────────────────────────────────────────────────────────
-app = FastAPI(debug=DEBUG_MODE, default_response_class=PrettyJSONResponse)
+app = FastAPI(debug=config.server.debug, default_response_class=PrettyJSONResponse)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=ALLOWED_ORIGINS,
-    allow_credentials=True,
-    allow_methods=["GET", "POST"],
-    allow_headers=["*"],
+    allow_origins=config.server.allowed_origins,
+    allow_credentials=config.server.allow_credentials,
+    allow_methods=config.server.allowed_methods,
+    allow_headers=config.server.allowed_headers,
 )
+
+@app.middleware("http")
+async def ensure_session_id(request: Request, call_next):
+    session_id = request.cookies.get(SESSION_COOKIE_NAME)
+    if not session_id:
+        session_id = str(uuid.uuid4())
+        response = await call_next(request)
+        response.set_cookie(
+            key=SESSION_COOKIE_NAME,
+            value=session_id,
+            httponly=True,   # Best practice
+            samesite="Lax",  # Or "Strict" or "None"
+            secure=True      # True if using HTTPS
+        )
+        return response
+    else:
+        # Already has session cookie
+        return await call_next(request)
 
 
 # ── Health Check ──────────────────────────────────────────────────────
@@ -70,10 +81,8 @@ async def root():
 
 
 # ── Raw chat endpoint ──────────────────────────────────────────────────────
-docs_agent = Agent(index_names=["alloradocs"], max_tokens=2000, enable_chart_generation=True)
-
 @app.post("/chat")
-async def chat_endpoint(req: ChatRequest):
+async def chat_endpoint(request: Request, req: ChatRequest):
     logger.info(f"/chat endpoint hit")
     t0 = time.time()
 
@@ -81,6 +90,16 @@ async def chat_endpoint(req: ChatRequest):
     logger.info(f"[{request_id}] Starting chat request: '{req.message[:50]}{'...' if len(req.message) > 50 else ''}'")
 
     try:
+        session_id = request.cookies.get(SESSION_COOKIE_NAME)
+        if not session_id:
+            raise Exception('no session id')
+
+        docs_agent = Agent(
+            session_id=session_id,
+            index_names=["alloradocs", "allora_chain", "allora_production"],
+            max_tokens=16384,
+        )
+
         answer, sources, image_paths = await docs_agent.answer_allora_query(request_id, req.message)
 
         total_time = time.time() - t0
@@ -108,16 +127,12 @@ async def chat_endpoint(req: ChatRequest):
 
 
 # ── Slack bot ──────────────────────────────────────────────────────
-slack_agent = Agent(index_names=["alloradocs", "allora_chain", "allora_production"], max_tokens=16384, enable_chart_generation=True)
-
 @app.post("/slack")
 async def slack_endpoint(request: Request):
-    """Handle Slack Events API webhooks for DMs and mentions"""
-    
     try:
         json_body = await request.json()
         request_id = id(request)
-        logger.info(f"/slack [{request_id}] Received Slack request: {json_body.get('type', 'unknown')}")
+        logger.info(f"/slack [{request_id}] {json_body.get('type', 'unknown')}")
         
         # Handle URL verification challenge
         if json_body.get("type") == "url_verification":
@@ -137,6 +152,16 @@ async def slack_endpoint(request: Request):
             
             # Handle direct messages (message.im) and mentions (app_mention)
             if event_type in ["message", "app_mention"]:
+                channel = event_data.get("channel")
+                if channel is None:
+                    raise Exception("no channel specified")
+
+                slack_agent = Agent(
+                    session_id=channel + "." + event_data.get("ts"),
+                    index_names=["alloradocs", "allora_chain", "allora_production"],
+                    max_tokens=16384,
+                )
+
                 # Start async processing (don't await to return 200 quickly)
                 asyncio.create_task(process_slack_message(event_data, str(request_id), slack_agent))
                 return Response(status_code=200)
@@ -156,6 +181,14 @@ async def slack_endpoint(request: Request):
     except Exception as e:
         logger.error(f"Unexpected error processing Slack request: {str(e)}")
         return Response(status_code=500)
+
+
+# ── Generated images ──────────────────────────────────────────────────────
+IMAGE_DIR = Path("static/images")
+IMAGE_DIR.mkdir(parents=True, exist_ok=True)
+
+# Mount the directory to serve images at /images
+app.mount("/images", StaticFiles(directory=IMAGE_DIR), name="images")
 
 
 

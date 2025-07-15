@@ -1,20 +1,26 @@
 import logging
 import asyncio
 import os
-from typing import List, Tuple
+from typing import List, Optional, Tuple, Union
 
 from llama_cloud import ImageBlock
 from llama_index.core.tools import BaseTool
 from llama_index.llms.openai import OpenAI, OpenAIResponses
 from llama_index.core.agent import FunctionCallingAgent
-from llama_index.core.memory import ChatMemoryBuffer
+from llama_index.core.memory import ChatMemoryBuffer, Memory
+from llama_index.core.memory import (
+    StaticMemoryBlock,
+    FactExtractionMemoryBlock,
+    VectorMemoryBlock,
+)
 
 from sysprompt import default_system_prompt
-from tool_chart import create_chart_tool
+from tool_chart import chart_tool
 from tool_openai_image import image_tool
 from tool_rag import create_rag_tools
 from utils import pretty_print
 from exceptions import RAGQueryError, ToolExecutionError
+from config import get_config
 
 
 class Agent:
@@ -22,45 +28,63 @@ class Agent:
 
     def __init__(
         self,
-        index_names: List[str] = [],
+        session_id: str,
+        index_names: List[str],
         sysprompt: str = default_system_prompt,
-        max_tokens: int = 1000,
+        max_tokens: Optional[int] = None,
         logger: logging.Logger = logging.getLogger("uvicorn.error"),
-        enable_chart_generation: bool = False,
     ):
         self.logger = logger
-        self.chart_generation_enabled = enable_chart_generation
+        
+        # Get configuration
+        config = get_config()
         
         tools: list[BaseTool] = []
-
-        # Create tools from query engines
-        tools.extend(create_rag_tools(index_names=index_names, max_tokens=max_tokens))
-
+        tools.extend(create_rag_tools(index_names=index_names, max_tokens=config.rag.max_tokens))
         tools.append(image_tool)
-        
-        # Add chart generation tool if enabled
-        if enable_chart_generation:
-            try:
-                chart_tool = create_chart_tool()
-                tools.append(chart_tool)
-                self.logger.info("Chart generation tool added to agent")
-            except ImportError as e:
-                self.logger.warning(f"Chart generation requested but dependencies not available: {e}")
+        tools.append(chart_tool)
         
         # Create the function calling agent
         self.agent = FunctionCallingAgent.from_tools(
             tools=tools,
-            # llm=OpenAI(
             llm=OpenAIResponses(
                 built_in_tools=[{"type": "web_search_preview"}], #, {"type": "image_generation"}],
-                model="gpt-4o",
-                temperature=0.3,  # Lower temperature for more focused, consistent responses
-                max_tokens=max_tokens * 2,  # Increase max tokens for more verbose responses
-                reuse_client=True,
+                model=config.agent.model,
+                temperature=config.agent.temperature,
+                max_tokens=max_tokens,
+                reuse_client=config.agent.reuse_client,
             ),
             system_prompt=sysprompt,
-            memory=ChatMemoryBuffer.from_defaults(token_limit=8000),
-            verbose=True,
+            memory=Memory.from_defaults(
+                session_id=session_id,
+                token_limit=config.agent.memory_token_limit,
+                # memory_blocks=[
+                #     # StaticMemoryBlock(
+                #     #     name="core_info",
+                #     #     static_content="My name is Logan, and I live in Saskatoon. I work at LlamaIndex.",
+                #     #     priority=0,
+                #     # ),
+                #     FactExtractionMemoryBlock(
+                #         name="extracted_info",
+                #         llm=llm,
+                #         max_facts=50,
+                #         priority=1,
+                #     ),
+                #     VectorMemoryBlock(
+                #         name="vector_memory",
+                #         # required: pass in a vector store like qdrant, chroma, weaviate, milvus, etc.
+                #         vector_store=vector_store,
+                #         priority=2,
+                #         embed_model=embed_model,
+                #         # The top-k message batches to retrieve
+                #         # similarity_top_k=2,
+                #         # optional: How many previous messages to include in the retrieval query
+                #         # retrieval_context_window=5
+                #         # optional: pass optional node-postprocessors for things like similarity threshold, etc.
+                #         # node_postprocessors=[...],
+                #     ),
+                # ],
+            )
         )
         
         self.logger.info(f"Agent initialized with {len(tools)} tools: {[tool.metadata.name for tool in tools]}")
@@ -400,14 +424,4 @@ class Agent:
             self.logger.debug(f"Error extracting image path: {str(e)}")
             return None
 
-    @property 
-    def image_generation_enabled(self) -> bool:
-        """Backward compatibility property"""
-        return self.chart_generation_enabled
 
-    # # Keep these properties for backward compatibility with main.py and slack.py
-    # def __getattr__(self, name):
-    #     """Provide backward compatibility for accessing query_engines"""
-    #     if name == 'query_engines':
-    #         return self.query_engines
-    #     raise AttributeError(f"'{self.__class__.__name__}' object has no attribute '{name}'")
