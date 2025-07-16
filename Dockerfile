@@ -7,4 +7,4 @@ RUN pip install -r requirements.txt
 
 COPY RAGmodel.py .
 
-CMD ["python", "RAGmodel.py"]
+CMD ["python", "/app/RAGmodel.py"]
