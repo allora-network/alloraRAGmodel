@@ -13,7 +13,7 @@ env:
 
 jobs:
   fetch-version:
-    runs-on: ubuntu-latest
+    runs-on: arc-allora-network-default
     outputs:
       VERSION: ${{ steps.fetch_version.outputs.VERSION }}
     steps:
@@ -25,7 +25,7 @@ jobs:
 
   build-and-push:
     name: Build and Push Docker Images to AWS ECR
-    runs-on: ubuntu-latest
+    runs-on: arc-allora-network-default
     needs: fetch-version
     permissions:
       id-token: write
