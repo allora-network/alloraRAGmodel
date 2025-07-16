@@ -9,7 +9,7 @@ on:
       - 'VERSION'
 
 env:
-  ECR_REPOSITORY: allora-rag-model
+  ECR_REPOSITORY: allora-chatbot-rag-model
 
 jobs:
   fetch-version:
