@@ -7,4 +7,6 @@ RUN pip install -r requirements.txt
 
 COPY *.py .
 
+RUN chown -R 1000:1000 /app
+
 CMD ["python", "main.py"]
