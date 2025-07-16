@@ -199,7 +199,7 @@ async def slack_endpoint(request: Request):
 
 
 # ── Generated images ──────────────────────────────────────────────────────
-IMAGE_DIR = Path("static/images")
+IMAGE_DIR = Path(os.getenv("IMAGE_DIR", "static/images"))
 IMAGE_DIR.mkdir(parents=True, exist_ok=True)
 
 # Mount the directory to serve images at /images
