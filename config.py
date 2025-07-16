@@ -42,7 +42,7 @@ class RAGConfig:
         if self.default_indices is None:
             self.default_indices = ["alloradocs"]
         if self.all_indices is None:
-            self.all_indices = ["alloradocs", "allora_chain", "allora_production"]
+            self.all_indices = ["alloradocs", "allora_production"]
 
 
 @dataclass

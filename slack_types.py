@@ -3,30 +3,33 @@ Slack request types and parsing functions
 """
 
 import logging
+import re
 from dataclasses import dataclass
-from typing import Dict, Any, Optional, Tuple
+from typing import Dict, Any, Literal, Optional, Tuple, Union
 from exceptions import SlackIntegrationError
 
 logger = logging.getLogger("uvicorn.error")
 
+@dataclass
+class SlackVerificationRequest:
+    challenge: str
+
 
 @dataclass
 class SlackRequest:
-    """Parsed Slack request data"""
     # Request metadata
     request_id: str
     request_type: str  # "url_verification", "event_callback", etc.
     
     # Event data (for event_callback requests)
+    text: str
+    clean_text: str
+    channel: str
     event_type: Optional[str] = None
-    channel: Optional[str] = None
+    event_id: Optional[str] = None  # Unique event ID for deduplication
     user: Optional[str] = None
-    text: Optional[str] = None
     thread_ts: Optional[str] = None
     message_ts: Optional[str] = None
-    
-    # URL verification data
-    challenge: Optional[str] = None
     
     # Bot detection
     is_bot_message: bool = False
@@ -34,12 +37,18 @@ class SlackRequest:
     # Message type detection
     is_dm: bool = False
     is_mention: bool = False
-    
-    # Session ID for agent
-    session_id: Optional[str] = None
+
+    def session_id(self):
+        if self.thread_ts:
+            # Thread reply: use thread_ts to maintain conversation context
+            return f"{self.channel}.{self.thread_ts}"
+        else:
+            # Top-level message: use message_ts as the thread root
+            return f"{self.channel}.{self.message_ts}"
 
 
-def parse_slack_request(json_body: Dict[str, Any], request_id: str) -> Tuple[SlackRequest, bool]:
+
+def parse_slack_request(json_body: Dict[str, Any], request_id: str) -> Union[SlackVerificationRequest, SlackRequest, None]:
     """Parse Slack request and determine if we should process it
     
     Args:
@@ -58,10 +67,6 @@ def parse_slack_request(json_body: Dict[str, Any], request_id: str) -> Tuple[Sla
         if not request_type:
             raise SlackIntegrationError("Missing 'type' field in Slack request")
         
-        slack_request = SlackRequest(
-            request_id=request_id,
-            request_type=request_type
-        )
         
         # Handle URL verification challenge
         if request_type == "url_verification":
@@ -69,9 +74,8 @@ def parse_slack_request(json_body: Dict[str, Any], request_id: str) -> Tuple[Sla
             if not challenge:
                 raise SlackIntegrationError("Missing 'challenge' field in URL verification request")
             
-            slack_request.challenge = challenge
             logger.info(f"[{request_id}] URL verification challenge received")
-            return slack_request, True
+            return SlackVerificationRequest(challenge=challenge)
         
         # Handle event callbacks
         if request_type == "event_callback":
@@ -83,27 +87,39 @@ def parse_slack_request(json_body: Dict[str, Any], request_id: str) -> Tuple[Sla
             if not event_type:
                 raise SlackIntegrationError("Missing 'type' field in event data")
             
-            slack_request.event_type = event_type
-            slack_request.channel = event_data.get("channel")
-            slack_request.user = event_data.get("user")
-            slack_request.text = event_data.get("text", "")
-            slack_request.thread_ts = event_data.get("thread_ts")
-            slack_request.message_ts = event_data.get("ts")
-            
-            # Check if this is a bot message (ignore these to prevent loops)
-            slack_request.is_bot_message = (
-                event_data.get("bot_id") is not None or 
+            text = event_data.get("text", "")
+            is_bot_message = (
+                event_data.get("bot_id") is not None or
                 event_data.get("subtype") == "bot_message"
+            )
+            channel = event_data.get("channel")
+            is_dm = channel.startswith("D")
+            is_mention = event_type == "app_mention"
+            clean_text = extract_message_text(text, is_mention)
+
+            slack_request = SlackRequest(
+                request_id=request_id,
+                request_type=request_type,
+                event_id=json_body.get("event_id"),
+                event_type=event_type,
+                channel=channel,
+                user=event_data.get("user"),
+                text=text,
+                clean_text=clean_text,
+                is_bot_message=is_bot_message,
+                is_dm=is_dm,
+                thread_ts=event_data.get("thread_ts"),
+                message_ts=event_data.get("ts"),
             )
             
             if slack_request.is_bot_message:
                 logger.info(f"[{request_id}] Ignoring bot message")
-                return slack_request, False
+                return None
             
             # Check if this is a message type we handle
             if event_type not in ["message", "app_mention"]:
                 logger.info(f"[{request_id}] Unhandled event type: {event_type}")
-                return slack_request, False
+                return None
             
             # Validate required fields for message processing
             if not slack_request.channel:
@@ -112,19 +128,12 @@ def parse_slack_request(json_body: Dict[str, Any], request_id: str) -> Tuple[Sla
             if not slack_request.message_ts:
                 raise SlackIntegrationError("Missing 'ts' field in message event")
             
-            # Determine message type
-            slack_request.is_dm = slack_request.channel.startswith("D")
-            slack_request.is_mention = event_type == "app_mention"
-            
-            # Generate session ID for agent
-            slack_request.session_id = f"{slack_request.channel}.{slack_request.message_ts}"
-            
             logger.info(f"[{request_id}] Processing {event_type} from user {slack_request.user} in channel {slack_request.channel}")
-            return slack_request, True
+            return slack_request
         
         # Unhandled request type
         logger.warning(f"[{request_id}] Unhandled request type: {request_type}")
-        return slack_request, False
+        return None
         
     except SlackIntegrationError:
         # Re-raise Slack integration errors
@@ -132,3 +141,24 @@ def parse_slack_request(json_body: Dict[str, Any], request_id: str) -> Tuple[Sla
     except Exception as e:
         # Convert other errors to SlackIntegrationError
         raise SlackIntegrationError(f"Error parsing Slack request: {str(e)}")
+
+
+def extract_message_text(text: str, is_mention: bool) -> str:
+    """Extract clean message text, removing bot mentions and formatting"""
+
+    if not text:
+        return ""
+
+    # Remove bot mention (format: <@U123456789>)
+    if is_mention:
+        text = re.sub(r'<@U[A-Z0-9]+>', '', text).strip()
+
+    # Unescape Slack HTML entities
+    text = text.replace('&amp;', '&')
+    text = text.replace('&lt;', '<')
+    text = text.replace('&gt;', '>')
+
+    # Remove extra whitespace
+    text = ' '.join(text.split())
+
+    return text

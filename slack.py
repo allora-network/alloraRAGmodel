@@ -1,65 +1,38 @@
 import logging
-import asyncio
-import time
 import os
 import re
-from typing import Dict, Any, Optional, List
+from typing import Optional, List
 import httpx
 from slack_sdk import WebClient
 from slack_sdk.errors import SlackApiError
-from utils import pretty_print
 from config import get_config
 from slack_types import SlackRequest
+from utils import pretty_print
 
 logger = logging.getLogger("uvicorn.error")
 
-async def process_slack_message(slack_request: SlackRequest, agent):
+async def send_slack_response(slack_request: SlackRequest, answer: str, sources: List[str], image_paths: List[str]):
     """Process Slack messages asynchronously"""
     
     try:
-        # Extract clean message text
-        clean_text = extract_message_text(slack_request.text, slack_request.is_mention)
-        
-        if not clean_text.strip():
-            logger.info(f"[{slack_request.request_id}] Empty message after cleaning, skipping")
-            return
-        
-        # Get response from RAG system
-        logger.info(f"[{slack_request.request_id}] Querying RAG system: '{clean_text[:50]}{'...' if len(clean_text) > 50 else ''}'")
-        
-        t0 = time.time()
-        answer, sources, image_paths = await agent.answer_allora_query(slack_request.request_id, clean_text)
-        query_time = time.time() - t0
-
-        logger.info(f"[{slack_request.request_id}] Raw answer type: {type(answer)}")
-        logger.info(f"[{slack_request.request_id}] Raw answer value: '{answer}'")
-        logger.info(f"[{slack_request.request_id}] Raw answer repr: {repr(answer)}")
-        
-        pretty_print({
-            "answer": answer,
-            "sources": sources,
-        })
-        
         # Format response for Slack
         formatted_response = format_slack_response(answer, sources, slack_request.is_dm)
         
         # Send response with optional images
-        await send_slack_response(
+        await _send_slack_response(
             channel=slack_request.channel,
             text=formatted_response,
             thread_ts=slack_request.thread_ts if not slack_request.is_dm else None,
             message_ts=slack_request.message_ts,
             image_paths=image_paths,
         )
-        
-        logger.info(f"[{slack_request.request_id}] Response sent - Query time: {query_time:.2f}s")
 
     except Exception as e:
         logger.error(f"[{slack_request.request_id}] Error processing message: {str(e)}")
         
         # Send error response to user
         try:
-            await send_slack_response(
+            await _send_slack_response(
                 channel=slack_request.channel,
                 text=f"Sorry, I encountered an error processing your request. Please try again later.  ```{str(e)}```",
                 thread_ts=slack_request.thread_ts if not slack_request.is_dm else None,
@@ -67,27 +40,6 @@ async def process_slack_message(slack_request: SlackRequest, agent):
             )
         except Exception as send_error:
             logger.error(f"[{slack_request.request_id}] Failed to send error response: {str(send_error)}")
-
-
-def extract_message_text(text: str, is_mention: bool) -> str:
-    """Extract clean message text, removing bot mentions and formatting"""
-    
-    if not text:
-        return ""
-    
-    # Remove bot mention (format: <@U123456789>)
-    if is_mention:
-        text = re.sub(r'<@U[A-Z0-9]+>', '', text).strip()
-    
-    # Unescape Slack HTML entities
-    text = text.replace('&amp;', '&')
-    text = text.replace('&lt;', '<')
-    text = text.replace('&gt;', '>')
-    
-    # Remove extra whitespace
-    text = ' '.join(text.split())
-    
-    return text
 
 
 def format_slack_response(answer: str, sources: List[str], is_dm: bool) -> str:
@@ -99,17 +51,17 @@ def format_slack_response(answer: str, sources: List[str], is_dm: bool) -> str:
     # Add sources if available
     if sources:
         source_text = "\n\n*Sources:*\n"
-        config = get_config()
-        for i, source in enumerate(sources[:config.slack.max_sources_displayed], 1):  # Limit sources for readability
-            # Clean up source paths for better readability
-            clean_source = source.split('/')[-1] if '/' in source else source
-            source_text += f"• {clean_source}\n"
+        # config = get_config()
+        # for i, source in enumerate(sources[:config.slack.max_sources_displayed], 1):  # Limit sources for readability
+        #     # Clean up source paths for better readability
+        #     clean_source = source.split('/')[-1] if '/' in source else source
+        #     source_text += f"• {clean_source}\n"
         
         formatted_response += source_text
     
-    # Add bot signature for DMs
-    if is_dm:
-        formatted_response += "\n\n_Powered by Allie - Allora Labs Assistant_"
+    # # Add bot signature for DMs
+    # if is_dm:
+    #     formatted_response += "\n\n_Powered by Allie - Allora Labs Assistant_"
     
     return formatted_response
 
@@ -147,7 +99,7 @@ async def upload_file_to_slack(channel: str, file_path: str, title: str):
         raise
 
 
-async def send_slack_response(channel: str, text: str, thread_ts: Optional[str] = None, message_ts: Optional[str] = None, image_paths: list[str] = []):
+async def _send_slack_response(channel: str, text: str, thread_ts: Optional[str] = None, message_ts: Optional[str] = None, image_paths: list[str] = []):
     """Send response to Slack using Web API"""
     
     bot_token = os.getenv("SLACK_BOT_TOKEN")
@@ -168,7 +120,12 @@ async def send_slack_response(channel: str, text: str, thread_ts: Optional[str] 
     elif message_ts and not channel.startswith("D"):  # Use message_ts as thread_ts for channel responses
         payload["thread_ts"] = message_ts
 
+    # Convert markdown to Slack-compatible format
     text = re.sub(r'```[a-zA-Z0-9_]*\n', '```', text)  # Remove syntax identifiers from code fences
+    text = re.sub(r'\*\*(.+?)\*\*', r'*\1*', text)  # Convert **bold** to *bold*
+    text = re.sub(r'### (.+)', r'*\1*', text)  # Convert ### headings to *bold*
+    text = re.sub(r'## (.+)', r'*\1*', text)  # Convert ## headings to *bold*
+    text = re.sub(r'# (.+)', r'*\1*', text)  # Convert # headings to *bold*
 
     payload["blocks"].extend([{
         "type": "section",
@@ -177,6 +134,9 @@ async def send_slack_response(channel: str, text: str, thread_ts: Optional[str] 
             "text": text,
         },
     }])
+    
+    # Add fallback text for notifications
+    payload["text"] = text[:150] + "..." if len(text) > 150 else text
     
     # Handle images - upload local files, embed URLs directly
     for i, image_path in enumerate(image_paths):
@@ -187,11 +147,12 @@ async def send_slack_response(channel: str, text: str, thread_ts: Optional[str] 
                 "image_url": image_path,
                 "alt_text": f"Generated Image {i+1}"
             })
+            break
         elif os.path.exists(image_path):
             # It's a local file (chart) - upload to Slack
             try:
                 logger.info(f"Uploading local chart file to Slack: {image_path}")
-                await upload_file_to_slack(bot_token, channel, image_path, "Generated Chart", thread_ts or message_ts)
+                await upload_file_to_slack(channel, image_path, "Generated Chart")
             except Exception as upload_error:
                 logger.error(f"Failed to upload chart file to Slack: {upload_error}")
                 # Add a text block mentioning the failed upload
@@ -223,6 +184,9 @@ async def send_slack_response(channel: str, text: str, thread_ts: Optional[str] 
         if not result.get("ok"):
             error = result.get("error", "Unknown error")
             logger.error(f"Slack API returned error: {error}")
+            logger.error("Payload:")
+            pretty_print(payload)
+
             raise Exception(f"Slack API error: {error}")
 
 

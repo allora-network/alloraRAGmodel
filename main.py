@@ -13,15 +13,16 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from llm import Agent
-from slack import process_slack_message
-from exceptions import AlloraAgentError, SlackIntegrationError, ConfigurationError
+from slack import send_slack_response
+from exceptions import AlloraAgentError, SlackIntegrationError
 from config import get_config
-from slack_types import parse_slack_request
+from slack_types import SlackRequest, SlackVerificationRequest, parse_slack_request
 from utils import pretty_print
 
 logger = logging.getLogger("uvicorn.error") # -> debugging purposes
 
 SESSION_COOKIE_NAME = 'session_id'
+
 
 # ── Requests/responses ───────────────────────────────────────────────────────────
 class ChatRequest(BaseModel):
@@ -98,7 +99,7 @@ async def chat_endpoint(request: Request, req: ChatRequest):
 
         docs_agent = Agent(
             session_id=session_id,
-            index_names=["alloradocs", "allora_chain", "allora_production"],
+            index_names=["alloradocs", "allora_production"],
             max_tokens=16384,
         )
 
@@ -107,18 +108,13 @@ async def chat_endpoint(request: Request, req: ChatRequest):
         total_time = time.time() - t0
         logger.info(f"[{request_id}] Request completed - Total time: {total_time:.2f}s")
         
-        # Return response (will be pretty-printed automatically)
-        response_data = {
+        return {
             "response": answer,
             "sources": sources,
+            "image_paths": image_paths,
             "query_time": f"{total_time:.2f}s",
             "request_id": str(request_id)
         }
-        
-        # Add image info if available
-        response_data["image_paths"] = image_paths
-        
-        return response_data
     
     except AlloraAgentError as e:
         logger.error(f"[{request_id}] Agent error: {str(e)}")
@@ -129,6 +125,13 @@ async def chat_endpoint(request: Request, req: ChatRequest):
 
 
 # ── Slack bot ──────────────────────────────────────────────────────
+
+# Keep track of agents so that they retain thread memory
+agents: Dict[str, Agent] = {}
+
+# Keep track of Slack events so that we don't process them multiple times
+processed_events = set()
+
 @app.post("/slack")
 async def slack_endpoint(request: Request):
     try:
@@ -137,26 +140,47 @@ async def slack_endpoint(request: Request):
         logger.info(f"/slack [{request_id}] {json_body.get('type', 'unknown')}")
         
         # Parse the Slack request
-        slack_request, should_process = parse_slack_request(json_body, request_id)
+        slack_request = parse_slack_request(json_body, request_id)
         
         # Handle URL verification challenge
-        if slack_request.request_type == "url_verification":
+        if isinstance(slack_request, SlackVerificationRequest):
             return Response(content=slack_request.challenge, headers={"Content-Type": "text/plain"}, status_code=200)
         
-        # If we shouldn't process this message, return 200 immediately
-        if not should_process:
-            return Response(status_code=200)
-        
         # Handle processable messages
-        if slack_request.request_type == "event_callback":
-            slack_agent = Agent(
-                session_id=slack_request.session_id,
-                index_names=["enablement", "alloradocs", "allora_chain", "allora_production"],
-                max_tokens=16384,
-            )
+        if isinstance(slack_request, SlackRequest) and slack_request.request_type == "event_callback":
+            # Event deduplication check
+            if slack_request.event_id:
+                if slack_request.event_id in processed_events:
+                    logger.info(f"[{request_id}] Duplicate event detected: {slack_request.event_id}")
+                    return Response(status_code=200)
+                
+                # Add to processed events
+                processed_events.add(slack_request.event_id)
+                logger.info(f"[{request_id}] Processing new event: {slack_request.event_id}")
+            else:
+                logger.warning(f"[{request_id}] No event_id found in Slack event - cannot deduplicate")
+            
+            # Define index configuration here in main.py
+            index_names = ["enablement", "alloradocs", "allora_production"]
+            max_tokens = 16384
 
-            # Start async processing (don't await to return 200 quickly)
-            asyncio.create_task(process_slack_message(slack_request, slack_agent))
+            slack_agent = agents.get(slack_request.session_id())
+            if slack_agent is None:
+                slack_agent = Agent(
+                    session_id=slack_request.session_id(),
+                    index_names=index_names,
+                    max_tokens=max_tokens,
+                )
+                agents[slack_request.session_id()] = slack_agent
+
+
+            async def respond():
+                answer, sources, image_paths = await slack_agent.answer_allora_query(1, slack_request.clean_text)
+                await send_slack_response(slack_request, answer, sources, image_paths)
+                logger.info("sent slack response")
+
+            asyncio.create_task(respond())
+
             return Response(status_code=200)
         
         # Shouldn't reach here, but return 200 to be safe
