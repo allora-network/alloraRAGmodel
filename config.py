@@ -61,8 +61,8 @@ class SlackConfig:
 class WizardConfig:
     """Configuration for Wizard API tools"""
     api_url: str = "http://localhost:3000"
-    timeout: float = 60.0  # Increased for long-running OSM/K8s queries
-    api_key: Optional[str] = None  # Optional API key for authenticated requests
+    timeout: float = 60.0
+    api_key: Optional[str] = None
 
 
 @dataclass
@@ -174,7 +174,7 @@ class Config:
         wizard_config = WizardConfig(
             api_url=os.getenv('WIZARD_API_URL', 'http://localhost:3000'),
             timeout=float(os.getenv('WIZARD_TIMEOUT', '30.0')),
-            api_key=os.getenv('WIZARD_API_KEY')  # Optional: set to require authentication
+            api_key=os.getenv('WIZARD_API_KEY')
         )
 
         return cls(
