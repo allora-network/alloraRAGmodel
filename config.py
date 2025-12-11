@@ -13,9 +13,9 @@ from exceptions import ConfigurationError
 class AgentConfig:
     """Configuration for the Allora RAG Agent"""
     # LLM Configuration
-    model: str = "gpt-4o"
+    model: str = "gpt-5.1"  # or "gpt-5.2", "gpt-4o", etc.
     temperature: float = 0.3
-    max_tokens: int = 2000
+    max_tokens: int = 4096
     max_tokens_multiplier: int = 2  # For agent LLM (max_tokens * multiplier)
     
     # Memory Configuration
@@ -142,8 +142,9 @@ class Config:
         
         # Create subsystem configurations with environment overrides
         agent_config = AgentConfig(
+            model=os.getenv('AGENT_MODEL', 'gpt-5.1'),
             temperature=float(os.getenv('AGENT_TEMPERATURE', '0.3')),
-            max_tokens=int(os.getenv('AGENT_MAX_TOKENS', '2000')),
+            max_tokens=int(os.getenv('AGENT_MAX_TOKENS', '4096')),
             max_tokens_multiplier=int(os.getenv('AGENT_MAX_TOKENS_MULTIPLIER', '2')),
             memory_token_limit=int(os.getenv('AGENT_MEMORY_TOKEN_LIMIT', '8000')),
             reuse_client=os.getenv('AGENT_REUSE_CLIENT', 'true').lower() == 'true',
