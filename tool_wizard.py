@@ -1,14 +1,15 @@
 """
 Allora Topic Wizard tools for LlamaIndex FunctionAgent
 
-Tools are dynamically fetched from the wizard backend at startup.
-This keeps the RAG repo clean and ensures tools are always in sync.
+Uses Claude Opus 4.5 for intelligent tool selection and execution.
+Tool schemas are fetched from the wizard backend at startup.
 """
 
 import logging
 import json
-from typing import Annotated, List, Literal, Optional, Callable
+from typing import List, Optional
 import httpx
+import anthropic
 from llama_index.core.tools import FunctionTool, BaseTool
 from config import get_config
 
@@ -22,33 +23,26 @@ SERVER_UNAVAILABLE_MESSAGE = (
 
 # Cache for the fetched schema
 _cached_schema: Optional[dict] = None
+_anthropic_client: Optional[anthropic.Anthropic] = None
 
 
-async def fetch_tool_schema() -> Optional[dict]:
-    """Fetch tool schema from the wizard backend."""
-    global _cached_schema
-    if _cached_schema is not None:
-        return _cached_schema
+def get_anthropic_client() -> Optional[anthropic.Anthropic]:
+    """Get or create Anthropic client."""
+    global _anthropic_client
+    if _anthropic_client is not None:
+        return _anthropic_client
 
     config = get_config()
-    url = f"{config.wizard.api_url}/api/tools/schema"
+    if not config.wizard.anthropic_api_key:
+        logger.warning("ANTHROPIC_API_KEY not set - wizard will use direct API calls without Claude reasoning")
+        return None
 
-    try:
-        async with httpx.AsyncClient() as client:
-            response = await client.get(url, timeout=10.0)
-            response.raise_for_status()
-            data = response.json()
-            if data.get("success"):
-                _cached_schema = data
-                logger.info(f"Fetched {len(data.get('tools', []))} tool schemas from wizard backend")
-                return data
-    except Exception as e:
-        logger.warning(f"Failed to fetch tool schema from wizard backend: {e}")
-    return None
+    _anthropic_client = anthropic.Anthropic(api_key=config.wizard.anthropic_api_key)
+    return _anthropic_client
 
 
 def fetch_tool_schema_sync() -> Optional[dict]:
-    """Synchronous version for startup."""
+    """Fetch tool schema from the wizard backend."""
     global _cached_schema
     if _cached_schema is not None:
         return _cached_schema
@@ -70,8 +64,8 @@ def fetch_tool_schema_sync() -> Optional[dict]:
     return None
 
 
-async def make_request(endpoint: str, params: Optional[dict] = None) -> str:
-    """Make HTTP GET request to wizard API and return formatted response."""
+def make_api_call(endpoint: str, params: Optional[dict] = None) -> dict:
+    """Make HTTP GET request to wizard API and return response dict."""
     config = get_config()
     url = f"{config.wizard.api_url}{endpoint}"
 
@@ -80,160 +74,283 @@ async def make_request(endpoint: str, params: Optional[dict] = None) -> str:
         headers["Authorization"] = f"Bearer {config.wizard.api_key}"
 
     try:
-        async with httpx.AsyncClient() as client:
-            response = await client.get(
+        with httpx.Client() as client:
+            response = client.get(
                 url,
                 params=params,
                 headers=headers if headers else None,
                 timeout=config.wizard.timeout
             )
             response.raise_for_status()
-            data = response.json()
-
-            if data.get("success"):
-                return json.dumps(data.get("data", data), indent=2)
-            else:
-                return f"Error: {data.get('message', 'Unknown error')}"
+            return response.json()
 
     except httpx.ConnectError:
-        logger.error(f"Connection failed to wizard API: {url}")
-        return SERVER_UNAVAILABLE_MESSAGE
-    except httpx.ConnectTimeout:
-        logger.error(f"Connection timeout to wizard API: {url}")
-        return SERVER_UNAVAILABLE_MESSAGE
+        return {"success": False, "error": "Connection failed - wizard service unavailable"}
     except httpx.TimeoutException:
-        logger.error(f"Request timeout calling wizard API: {url}")
-        return "Error: Request timed out. Please try again."
+        return {"success": False, "error": "Request timed out"}
     except httpx.HTTPStatusError as e:
-        logger.error(f"HTTP error calling wizard API: {e}")
-        if e.response.status_code == 401:
-            return "Error: Authentication failed."
-        if e.response.status_code == 403:
-            return "Error: Access forbidden."
-        if e.response.status_code >= 500:
-            return SERVER_UNAVAILABLE_MESSAGE
-        return f"Error: HTTP {e.response.status_code} - {e.response.text}"
+        return {"success": False, "error": f"HTTP {e.response.status_code}"}
     except Exception as e:
-        logger.error(f"Error calling wizard API: {e}")
-        error_str = str(e).lower()
-        if any(x in error_str for x in ["connection", "refused", "unreachable"]):
-            return SERVER_UNAVAILABLE_MESSAGE
-        return f"Error: {str(e)}"
+        return {"success": False, "error": str(e)}
 
 
-def create_tool_function(schema: dict) -> Callable:
-    """Create an async function from a tool schema."""
-    endpoint_template = schema["endpoint"]
-    params_schema = schema.get("params", {})
-    extra_params = schema.get("extra_params", {})
+def build_claude_tools(schema_data: dict) -> list:
+    """Build Claude tool definitions from schema data."""
+    tools = []
+    type_definitions = schema_data.get("types", {})
 
-    async def tool_fn(**kwargs) -> str:
-        endpoint = endpoint_template
-        query_params = dict(extra_params) if extra_params else {}
+    for schema in schema_data.get("tools", []):
+        properties = {}
+        required = []
 
-        for param_name, param_config in params_schema.items():
-            value = kwargs.get(param_name)
+        for param_name, param_config in schema.get("params", {}).items():
+            param_type = param_config.get("type", "str")
 
-            if value is None and param_config.get("optional"):
-                continue
-            if value is None and "default" in param_config:
-                value = param_config["default"]
-            if value is None:
-                continue
-
-            if param_config.get("path"):
-                endpoint = endpoint.replace(f"{{{param_name}}}", str(value))
+            # Map type to JSON Schema
+            if param_type in type_definitions:
+                prop = {
+                    "type": "string",
+                    "enum": type_definitions[param_type],
+                    "description": param_config.get("description", param_name)
+                }
+            elif param_type == "bool":
+                prop = {
+                    "type": "boolean",
+                    "description": param_config.get("description", param_name)
+                }
             else:
-                query_key = param_config.get("query_key", param_name)
-                if isinstance(value, bool):
-                    value = "true" if value else "false"
-                query_params[query_key] = value
+                prop = {
+                    "type": "string",
+                    "description": param_config.get("description", param_name)
+                }
 
-        return await make_request(endpoint, query_params if query_params else None)
+            properties[param_name] = prop
 
-    return tool_fn
+            if not param_config.get("optional") and "default" not in param_config:
+                required.append(param_name)
+
+        tools.append({
+            "name": schema["name"],
+            "description": schema["description"],
+            "input_schema": {
+                "type": "object",
+                "properties": properties,
+                "required": required
+            }
+        })
+
+    return tools
 
 
-def build_function_signature(schema: dict, type_definitions: dict) -> dict:
-    """Build parameter annotations for a tool function."""
-    params_schema = schema.get("params", {})
-    annotations = {}
+def execute_tool_call(tool_name: str, tool_input: dict, schema_data: dict) -> dict:
+    """Execute a tool call based on schema."""
+    # Find the tool schema
+    tool_schema = None
+    for schema in schema_data.get("tools", []):
+        if schema["name"] == tool_name:
+            tool_schema = schema
+            break
 
-    # Build type mapping from server-provided types
-    type_mapping = {"str": str, "bool": bool}
-    for type_name, options in type_definitions.items():
-        if isinstance(options, list):
-            type_mapping[type_name] = Literal[tuple(options)]
+    if not tool_schema:
+        return {"success": False, "error": f"Unknown tool: {tool_name}"}
+
+    # Build endpoint and params
+    endpoint = tool_schema["endpoint"]
+    params_schema = tool_schema.get("params", {})
+    extra_params = tool_schema.get("extra_params", {})
+    query_params = dict(extra_params) if extra_params else {}
 
     for param_name, param_config in params_schema.items():
-        param_type = type_mapping.get(param_config["type"], str)
-        description = param_config.get("description", param_name)
+        value = tool_input.get(param_name)
 
-        if param_config.get("optional") or "default" in param_config:
-            annotations[param_name] = Annotated[Optional[param_type], description]
+        if value is None and param_config.get("optional"):
+            continue
+        if value is None and "default" in param_config:
+            value = param_config["default"]
+        if value is None:
+            continue
+
+        if param_config.get("path"):
+            endpoint = endpoint.replace(f"{{{param_name}}}", str(value))
         else:
-            annotations[param_name] = Annotated[param_type, description]
+            query_key = param_config.get("query_key", param_name)
+            if isinstance(value, bool):
+                value = "true" if value else "false"
+            query_params[query_key] = value
 
-    return annotations
-
-
-def build_pydantic_model(schema: dict, type_definitions: dict):
-    """Build a Pydantic model for tool parameters."""
-    from pydantic import BaseModel, Field, create_model
-    from typing import Optional as Opt
-
-    params_schema = schema.get("params", {})
-    if not params_schema:
-        return None
-
-    type_mapping = {"str": str, "bool": bool}
-    for type_name, options in type_definitions.items():
-        if isinstance(options, list):
-            type_mapping[type_name] = Literal[tuple(options)]
-
-    fields = {}
-    for param_name, param_config in params_schema.items():
-        param_type = type_mapping.get(param_config["type"], str)
-        description = param_config.get("description", param_name)
-        default = param_config.get("default", ...)
-
-        if param_config.get("optional"):
-            fields[param_name] = (Opt[param_type], Field(default=None, description=description))
-        elif default != ...:
-            fields[param_name] = (param_type, Field(default=default, description=description))
-        else:
-            fields[param_name] = (param_type, Field(..., description=description))
-
-    return create_model(f"{schema['name']}_params", **fields)
+    return make_api_call(endpoint, query_params if query_params else None)
 
 
-def create_wizard_tools() -> List[BaseTool]:
-    """Create wizard tools by fetching schema from backend."""
+async def wizard_query(query: str) -> str:
+    """
+    Query the Allora Topic Wizard using Claude Opus 4.5.
+
+    This tool uses Claude to intelligently determine which wizard API calls
+    to make based on your natural language query. It can:
+    - Get topic information (metadata, stake, activity status)
+    - Check whitelist status for workers and reputers
+    - List services (forecasters, reputers) and their configurations
+    - Query wallet addresses and balances
+    - Check registration status
+
+    Args:
+        query: Natural language query about Allora topics, services, or configurations.
+               Examples:
+               - "What is topic 5 on testnet?"
+               - "Is topic 14 active on mainnet?"
+               - "List all forecasters serving topic 10"
+               - "What's the total stake in topic 1 on mainnet?"
+
+    Returns:
+        Detailed response based on the wizard API data.
+    """
+    config = get_config()
     schema_data = fetch_tool_schema_sync()
 
     if not schema_data:
-        logger.warning("Could not fetch tool schema - wizard tools will not be available")
-        return []
+        return SERVER_UNAVAILABLE_MESSAGE
 
-    tools = []
-    tool_schemas = schema_data.get("tools", [])
-    type_definitions = schema_data.get("types", {})
+    client = get_anthropic_client()
 
-    for schema in tool_schemas:
-        fn = create_tool_function(schema)
-        fn.__name__ = schema["name"]
-        fn.__doc__ = schema["description"]
+    # If no Anthropic client, fall back to simple keyword matching
+    if not client:
+        return await _fallback_query(query, schema_data)
 
-        # Build Pydantic model for proper parameter schema
-        fn_schema = build_pydantic_model(schema, type_definitions)
+    # Build tools for Claude
+    claude_tools = build_claude_tools(schema_data)
 
-        tool = FunctionTool.from_defaults(
-            fn=fn,
-            name=schema["name"],
-            description=schema["description"],
-            fn_schema=fn_schema,
+    system_prompt = """You are an expert assistant for the Allora Network. Your role is to help users query information about topics, services, and configurations using the available tools.
+
+When the user asks a question:
+1. Determine which tool(s) to call based on their query
+2. Call the appropriate tools with the correct parameters
+3. Analyze the results and provide a clear, helpful response
+
+Important notes:
+- Default to "testnet" network unless the user specifies "mainnet"
+- Topic IDs are numeric strings (e.g., "1", "5", "14")
+- Addresses start with "allo1..."
+- For listing services, use list_services with the appropriate service_type (reputer or forecaster)
+
+Be concise but thorough in your responses. If data is missing or there's an error, explain what happened."""
+
+    messages = [{"role": "user", "content": query}]
+
+    try:
+        # First Claude call - let it decide what tools to use
+        response = client.messages.create(
+            model=config.wizard.anthropic_model,
+            max_tokens=4096,
+            system=system_prompt,
+            tools=claude_tools,
+            messages=messages
         )
-        tools.append(tool)
 
-    logger.info(f"Created {len(tools)} wizard tools from server schema")
-    return tools
+        # Process tool calls in a loop until Claude is done
+        while response.stop_reason == "tool_use":
+            # Extract tool uses from response
+            tool_results = []
+            assistant_content = response.content
+
+            for block in response.content:
+                if block.type == "tool_use":
+                    tool_name = block.name
+                    tool_input = block.input
+                    tool_id = block.id
+
+                    logger.debug(f"Claude calling tool: {tool_name} with {tool_input}")
+
+                    # Execute the tool
+                    result = execute_tool_call(tool_name, tool_input, schema_data)
+
+                    tool_results.append({
+                        "type": "tool_result",
+                        "tool_use_id": tool_id,
+                        "content": json.dumps(result, indent=2)
+                    })
+
+            # Continue conversation with tool results
+            messages = [
+                {"role": "user", "content": query},
+                {"role": "assistant", "content": assistant_content},
+                {"role": "user", "content": tool_results}
+            ]
+
+            response = client.messages.create(
+                model=config.wizard.anthropic_model,
+                max_tokens=4096,
+                system=system_prompt,
+                tools=claude_tools,
+                messages=messages
+            )
+
+        # Extract final text response
+        final_response = ""
+        for block in response.content:
+            if hasattr(block, "text"):
+                final_response += block.text
+
+        return final_response if final_response else "I couldn't generate a response. Please try rephrasing your question."
+
+    except anthropic.APIError as e:
+        logger.error(f"Anthropic API error: {e}")
+        return f"Error communicating with AI service: {str(e)}"
+    except Exception as e:
+        logger.error(f"Error in wizard_query: {e}")
+        return f"An error occurred: {str(e)}"
+
+
+async def _fallback_query(query: str, schema_data: dict) -> str:
+    """Simple fallback when Anthropic is not available."""
+    query_lower = query.lower()
+
+    # Try to extract topic ID
+    import re
+    topic_match = re.search(r'topic\s*(\d+)', query_lower)
+    topic_id = topic_match.group(1) if topic_match else None
+
+    # Determine network
+    network = "mainnet" if "mainnet" in query_lower else "testnet"
+
+    if topic_id:
+        # Get topic info
+        result = make_api_call(f"/api/sdk/query/topic/{topic_id}", {"network": network})
+        if result.get("success"):
+            return f"Topic {topic_id} on {network}:\n```json\n{json.dumps(result.get('data', result), indent=2)}\n```"
+        else:
+            return f"Error fetching topic {topic_id}: {result.get('error', 'Unknown error')}"
+
+    if "list" in query_lower and ("forecaster" in query_lower or "reputer" in query_lower):
+        service_type = "forecaster" if "forecaster" in query_lower else "reputer"
+        result = make_api_call("/api/osm/config", {"network": network, "purpose": service_type})
+        if result.get("success"):
+            return f"{service_type.title()}s on {network}:\n```json\n{json.dumps(result.get('data', result), indent=2)}\n```"
+
+    return "I couldn't understand your query. Please try asking about a specific topic (e.g., 'What is topic 5 on testnet?') or listing services (e.g., 'List forecasters on testnet')."
+
+
+# Create the wizard tool for the main agent
+wizard_tool = FunctionTool.from_defaults(
+    async_fn=wizard_query,
+    name="wizard_query",
+    description="""Query the Allora Topic Wizard for blockchain and service information.
+
+Use this tool to get information about:
+- Topic details (metadata, stake, activity, whitelist status)
+- Service configurations (forecasters, reputers)
+- Wallet addresses and registrations
+- Network inference data
+
+Examples:
+- "What is topic 5 on testnet?"
+- "Is topic 14 active on mainnet?"
+- "List forecasters serving topic 10"
+- "What's the total stake in topic 1?"
+- "Is address allo1xyz whitelisted as a worker on topic 5?"
+"""
+)
+
+
+def create_wizard_tools() -> List[BaseTool]:
+    """Create wizard tools for the agent."""
+    return [wizard_tool]

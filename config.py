@@ -63,6 +63,9 @@ class WizardConfig:
     api_url: str = "http://localhost:3000"
     timeout: float = 60.0
     api_key: Optional[str] = None
+    # Anthropic config for wizard tool reasoning
+    anthropic_api_key: Optional[str] = None
+    anthropic_model: str = "claude-opus-4-5-20251101"
 
 
 @dataclass
@@ -173,8 +176,10 @@ class Config:
 
         wizard_config = WizardConfig(
             api_url=os.getenv('WIZARD_API_URL', 'http://localhost:3000'),
-            timeout=float(os.getenv('WIZARD_TIMEOUT', '30.0')),
-            api_key=os.getenv('WIZARD_API_KEY')
+            timeout=float(os.getenv('WIZARD_TIMEOUT', '60.0')),
+            api_key=os.getenv('WIZARD_API_KEY'),
+            anthropic_api_key=os.getenv('ANTHROPIC_API_KEY'),
+            anthropic_model=os.getenv('WIZARD_ANTHROPIC_MODEL', 'claude-opus-4-5-20251101')
         )
 
         return cls(
