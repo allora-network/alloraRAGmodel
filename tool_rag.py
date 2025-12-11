@@ -1,6 +1,6 @@
 import os
 from llama_index.core.tools import BaseTool, QueryEngineTool
-from llama_index.indices.managed.llama_cloud import LlamaCloudIndex
+from llama_cloud_services import LlamaCloudIndex
 from llama_index.llms.openai import OpenAI
 from sysprompt import default_system_prompt
 from config import get_config

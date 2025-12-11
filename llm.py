@@ -19,7 +19,6 @@ from tool_chart import chart_tool
 from tool_openai_image import image_tool
 from tool_rag import create_rag_tools
 from tool_wizard import create_wizard_tools
-from utils import pretty_print
 from exceptions import RAGQueryError, ToolExecutionError
 from config import get_config
 
@@ -70,7 +69,7 @@ class Agent:
             system_prompt=sysprompt,
         )
         
-        self.logger.info(f"Agent initialized with {len(tools)} tools: {[tool.metadata.name for tool in tools]}")
+        self.logger.info(f"Agent initialized with {len(tools)} tools")
 
     async def answer_allora_query(self, request_id: int, message: str) -> Tuple[str, List[str], List[str]]:
         """Answer query using FunctionAgent with source extraction and chart generation
@@ -82,40 +81,16 @@ class Agent:
             self.logger.info(f"[{request_id}] Processing query: '{message[:50]}{'...' if len(message) > 50 else ''}'")
             
             # Use the agent to process the query (new API uses run() which returns a handler)
-            self.logger.info(f"[{request_id}] Calling agent.run() with message: '{message}'")
             handler = self.agent.run(user_msg=message, memory=self.memory)
             response = await handler
-            self.logger.info(f"[{request_id}] Agent.run() completed successfully")
 
-            pretty_print(response)
-            
-            # Debug logging for response structure
-            self.logger.info(f"[{request_id}] Response type: {type(response)}")
-            self.logger.info(f"[{request_id}] Response attributes: {[attr for attr in dir(response) if not attr.startswith('_')]}")
-            if hasattr(response, 'response'):
-                self.logger.info(f"[{request_id}] response.response: {response.response}")
-            if hasattr(response, 'chat_history'):
-                self.logger.info(f"[{request_id}] chat_history length: {len(response.chat_history) if response.chat_history else 0}")
-            if hasattr(response, 'sources'):
-                self.logger.info(f"[{request_id}] sources: {response.sources}")
-            if hasattr(response, 'source_nodes'):
-                self.logger.info(f"[{request_id}] source_nodes length: {len(response.source_nodes) if response.source_nodes else 0}")
-            
-            # Extract the response text with fallback logic
+            # Extract response components
             answer = self._extract_response_text(response, request_id)
-            self.logger.info(f"[{request_id}] Final extracted answer: '{answer[:100]}{'...' if len(answer) > 100 else ''}'")
-            
-            # Extract sources from the response
             sources = self._extract_sources_from_response(response)
-
-            # Extract artifacts from response
             image_paths = self._extract_images_from_response(response)
-            self.logger.info(f"[{request_id}] Extracted image paths: {image_paths}")
-            
-            # # Check if chart was generated (look for file path in response)
-            # image_path = self._extract_image_path_from_response(response)
-            
-            self.logger.info(f"[{request_id}] Query completed - Response length: {len(answer)}, Sources: {len(sources)}, Image: {bool(image_paths and len(image_paths) > 0)}")
+
+            self.logger.info(f"[{request_id}] Completed - {len(answer)} chars, {len(sources)} sources")
+            self.logger.info(f"[{request_id}] Answer: {answer[:500]}{'...' if len(answer) > 500 else ''}")
             
             return answer, sources, image_paths
             
@@ -148,7 +123,7 @@ class Agent:
                     if value is not None:
                         text = str(value).strip()
                         if text and text != "None":
-                            self.logger.info(f"[{request_id}] Extracted response from '{attr}' attribute")
+                            self.logger.debug(f"[{request_id}] Extracted response from '{attr}' attribute")
                             return text
             except Exception as e:
                 self.logger.debug(f"[{request_id}] Error accessing attribute '{attr}': {str(e)}")
@@ -177,7 +152,7 @@ class Agent:
                 for source in response.sources:
                     if isinstance(source, ImageBlock) and source.url:
                         image_paths.append(source.url)
-                        self.logger.info(f"Found ImageBlock URL: {source.url}")
+                        self.logger.debug(f"Found ImageBlock URL: {source.url}")
             
             # Method 2: Parse tool call results from chat history
             if hasattr(response, 'chat_history'):
@@ -200,7 +175,7 @@ class Agent:
                             raw_output = str(source.raw_output)
                             if raw_output.endswith('.png') or raw_output.endswith('.jpg'):
                                 image_paths.append(raw_output)
-                                self.logger.info(f"Found chart file from ToolOutput: {raw_output}")
+                                self.logger.debug(f"Found chart file from ToolOutput: {raw_output}")
                     elif hasattr(source, 'tool_name') and source.tool_name == 'image_generation':
                         # Extract from DALL-E tool output  
                         if hasattr(source, 'raw_output') and source.raw_output:
@@ -209,10 +184,10 @@ class Agent:
                                 for url in raw_output:
                                     if isinstance(url, str) and url.startswith('http'):
                                         image_paths.append(url)
-                                        self.logger.info(f"Found DALL-E URL from ToolOutput: {url}")
+                                        self.logger.debug(f"Found DALL-E URL from ToolOutput: {url}")
                             elif isinstance(raw_output, str) and raw_output.startswith('http'):
                                 image_paths.append(raw_output)
-                                self.logger.info(f"Found DALL-E URL from ToolOutput: {raw_output}")
+                                self.logger.debug(f"Found DALL-E URL from ToolOutput: {raw_output}")
             
             # Method 4: Check response source_nodes for tool outputs (legacy support)
             if hasattr(response, 'source_nodes'):
@@ -237,7 +212,7 @@ class Agent:
                     seen.add(img)
                     unique_images.append(img)
                     
-            self.logger.info(f"Total unique images extracted: {len(unique_images)}")
+            self.logger.debug(f"Total unique images extracted: {len(unique_images)}")
             return unique_images
             
         except Exception as e:
@@ -256,13 +231,13 @@ class Agent:
                     for url in result:
                         if isinstance(url, str) and (url.startswith('http') or url.startswith('https')):
                             images.append(url)
-                            self.logger.info(f"Found DALL-E image URL: {url}")
+                            self.logger.debug(f"Found DALL-E image URL: {url}")
             elif function_name == 'generate_chart':
                 # Chart tool returns file path
                 result = tool_call.get('result', '')
                 if isinstance(result, str) and (result.endswith('.png') or result.endswith('.jpg')):
                     images.append(result)
-                    self.logger.info(f"Found chart file path: {result}")
+                    self.logger.debug(f"Found chart file path: {result}")
         except Exception as e:
             self.logger.debug(f"Error parsing tool call result: {str(e)}")
         return images
@@ -307,7 +282,7 @@ class Agent:
             images.extend(paths)
             
             if images:
-                self.logger.info(f"Extracted images from text: {images}")
+                self.logger.debug(f"Extracted images from text: {images}")
                 
         except Exception as e:
             self.logger.debug(f"Error extracting images from text: {str(e)}")
