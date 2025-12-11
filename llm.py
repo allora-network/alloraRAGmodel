@@ -6,7 +6,7 @@ from typing import List, Optional, Tuple, Union
 from llama_cloud import ImageBlock
 from llama_index.core.tools import BaseTool
 from llama_index.llms.openai import OpenAI, OpenAIResponses
-from llama_index.core.agent import FunctionCallingAgent
+from llama_index.core.agent import FunctionAgent
 from llama_index.core.memory import ChatMemoryBuffer, Memory
 from llama_index.core.memory import (
     StaticMemoryBlock,
@@ -18,6 +18,7 @@ from sysprompt import default_system_prompt
 from tool_chart import chart_tool
 from tool_openai_image import image_tool
 from tool_rag import create_rag_tools
+from tool_wizard import create_wizard_tools
 from utils import pretty_print
 from exceptions import RAGQueryError, ToolExecutionError
 from config import get_config
@@ -43,48 +44,30 @@ class Agent:
         tools.extend(create_rag_tools(index_names=index_names, max_tokens=config.rag.max_tokens))
         tools.append(image_tool)
         tools.append(chart_tool)
+        tools.extend(create_wizard_tools())
         
-        # Create the function calling agent
-        self.agent = FunctionCallingAgent.from_tools(
+        # Create the LLM
+        self.llm = OpenAIResponses(
+            built_in_tools=[{"type": "web_search_preview"}],
+            model=config.agent.model,
+            temperature=config.agent.temperature,
+            max_tokens=max_tokens,
+            reuse_client=config.agent.reuse_client,
+        )
+
+        # Create memory for the session
+        self.memory = Memory.from_defaults(
+            session_id=session_id,
+            token_limit=config.agent.memory_token_limit,
+        )
+
+        # Create the function calling agent (new API - direct instantiation)
+        self.agent = FunctionAgent(
+            name="AlloraAssistant",
+            description="An AI assistant for Allora Network queries",
             tools=tools,
-            llm=OpenAIResponses(
-                built_in_tools=[{"type": "web_search_preview"}], #, {"type": "image_generation"}],
-                model=config.agent.model,
-                temperature=config.agent.temperature,
-                max_tokens=max_tokens,
-                reuse_client=config.agent.reuse_client,
-            ),
+            llm=self.llm,
             system_prompt=sysprompt,
-            memory=Memory.from_defaults(
-                session_id=session_id,
-                token_limit=config.agent.memory_token_limit,
-                # memory_blocks=[
-                #     # StaticMemoryBlock(
-                #     #     name="core_info",
-                #     #     static_content="My name is Logan, and I live in Saskatoon. I work at LlamaIndex.",
-                #     #     priority=0,
-                #     # ),
-                #     FactExtractionMemoryBlock(
-                #         name="extracted_info",
-                #         llm=llm,
-                #         max_facts=50,
-                #         priority=1,
-                #     ),
-                #     VectorMemoryBlock(
-                #         name="vector_memory",
-                #         # required: pass in a vector store like qdrant, chroma, weaviate, milvus, etc.
-                #         vector_store=vector_store,
-                #         priority=2,
-                #         embed_model=embed_model,
-                #         # The top-k message batches to retrieve
-                #         # similarity_top_k=2,
-                #         # optional: How many previous messages to include in the retrieval query
-                #         # retrieval_context_window=5
-                #         # optional: pass optional node-postprocessors for things like similarity threshold, etc.
-                #         # node_postprocessors=[...],
-                #     ),
-                # ],
-            )
         )
         
         self.logger.info(f"Agent initialized with {len(tools)} tools: {[tool.metadata.name for tool in tools]}")
@@ -98,10 +81,11 @@ class Agent:
         try:
             self.logger.info(f"[{request_id}] Processing query: '{message[:50]}{'...' if len(message) > 50 else ''}'")
             
-            # Use the agent to process the query
-            self.logger.info(f"[{request_id}] Calling agent.achat() with message: '{message}'")
-            response = await self.agent.achat(message)
-            self.logger.info(f"[{request_id}] Agent.achat() completed successfully")
+            # Use the agent to process the query (new API uses run() which returns a handler)
+            self.logger.info(f"[{request_id}] Calling agent.run() with message: '{message}'")
+            handler = self.agent.run(user_msg=message, memory=self.memory)
+            response = await handler
+            self.logger.info(f"[{request_id}] Agent.run() completed successfully")
 
             pretty_print(response)
             

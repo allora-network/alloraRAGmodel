@@ -58,6 +58,14 @@ class SlackConfig:
 
 
 @dataclass
+class WizardConfig:
+    """Configuration for Wizard API tools"""
+    api_url: str = "http://localhost:3000"
+    timeout: float = 60.0  # Increased for long-running OSM/K8s queries
+    api_key: Optional[str] = None  # Optional API key for authenticated requests
+
+
+@dataclass
 class ServerConfig:
     """Configuration for FastAPI server"""
     # Server Settings
@@ -91,7 +99,8 @@ class Config:
     chart: ChartConfig
     slack: SlackConfig
     server: ServerConfig
-    
+    wizard: WizardConfig
+
     # Environment Variables (required)
     llama_cloud_api_key: str
     llama_cloud_org_id: str
@@ -161,13 +170,20 @@ class Config:
             allowed_origins=os.getenv('ALLOWED_ORIGINS', 'http://localhost:3000,http://localhost:8000').split(','),
             requests_per_minute=int(os.getenv('REQUESTS_PER_MINUTE', '60'))
         )
-        
+
+        wizard_config = WizardConfig(
+            api_url=os.getenv('WIZARD_API_URL', 'http://localhost:3000'),
+            timeout=float(os.getenv('WIZARD_TIMEOUT', '30.0')),
+            api_key=os.getenv('WIZARD_API_KEY')  # Optional: set to require authentication
+        )
+
         return cls(
             agent=agent_config,
             rag=rag_config,
             chart=chart_config,
             slack=slack_config,
             server=server_config,
+            wizard=wizard_config,
             **env_values
         )
     
