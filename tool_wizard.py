@@ -187,11 +187,27 @@ async def wizard_query(query: str) -> str:
 
     This tool uses Claude to intelligently determine which wizard API calls
     to make based on your natural language query. It can:
-    - Get topic information (metadata, stake, activity status)
-    - Check whitelist status for workers and reputers
+
+    Topic Information:
+    - Get topic details (metadata, stake, activity status, fee revenue)
+    - Check if a topic exists
+    - Get network inference and latest inferences
+
+    Whitelist Operations:
+    - Check if whitelist is enabled for workers/reputers
+    - Check if specific addresses are whitelisted
+    - List ALL whitelisted workers or reputers for a topic
+
+    Registration & Scores:
+    - Check worker/reputer registration status
+    - Get worker/reputer node info
+    - Get inferer, forecaster, and reputer scores
+    - Get reputer stake in a topic
+
+    Services & Infrastructure:
     - List services (forecasters, reputers) and their configurations
-    - Query wallet addresses and balances
-    - Check registration status
+    - Query OSM configurations and wallet addresses
+    - Inspect Kubernetes deployments, configmaps, and pod status
 
     Args:
         query: Natural language query about Allora topics, services, or configurations.
@@ -200,6 +216,9 @@ async def wizard_query(query: str) -> str:
                - "Is topic 14 active on mainnet?"
                - "List all forecasters serving topic 10"
                - "What's the total stake in topic 1 on mainnet?"
+               - "List all whitelisted workers on topic 70"
+               - "How many reputers are whitelisted on topic 5?"
+               - "What's the inferer score for allo1xyz on topic 10?"
 
     Returns:
         Detailed response based on the wizard API data.
@@ -231,6 +250,15 @@ Important notes:
 - Topic IDs are numeric strings (e.g., "1", "5", "14")
 - Addresses start with "allo1..."
 - For listing services, use list_services with the appropriate service_type (reputer or forecaster)
+
+Available tool categories:
+- Topic queries: get_topic, topic_exists, is_topic_active, get_topic_stake, get_topic_fee_revenue
+- Whitelist queries: is_worker/reputer_whitelist_enabled, is_worker/reputer_whitelisted, get_whitelisted_workers, get_whitelisted_reputers
+- Registration: is_worker/reputer_registered, get_worker/reputer_node_info
+- Scores & stakes: get_inferer_score, get_forecaster_score, get_reputer_score, get_reputer_stake_in_topic
+- Inferences: get_latest_inferences, get_network_inference
+- Services: list_services, get_osm_config, get_osm_wallets, get_osm_topic_details
+- Kubernetes: get_k8s_deployments, get_k8s_configmaps, get_k8s_pod_status
 
 Be concise but thorough in your responses. If data is missing or there's an error, explain what happened."""
 
@@ -336,10 +364,13 @@ wizard_tool = FunctionTool.from_defaults(
     description="""Query the Allora Topic Wizard for blockchain and service information.
 
 Use this tool to get information about:
-- Topic details (metadata, stake, activity, whitelist status)
-- Service configurations (forecasters, reputers)
-- Wallet addresses and registrations
-- Network inference data
+- Topic details (metadata, stake, activity, fee revenue, existence)
+- Whitelist status (check individual addresses OR list ALL whitelisted workers/reputers)
+- Registration status and node info for workers/reputers
+- Scores (inferer, forecaster, reputer) and reputer stakes
+- Service configurations (forecasters, reputers) from OSM
+- Kubernetes infrastructure (deployments, pods, configmaps)
+- Network inference data and latest inferences
 
 Examples:
 - "What is topic 5 on testnet?"
@@ -347,6 +378,10 @@ Examples:
 - "List forecasters serving topic 10"
 - "What's the total stake in topic 1?"
 - "Is address allo1xyz whitelisted as a worker on topic 5?"
+- "List all whitelisted workers on topic 70"
+- "How many reputers are whitelisted on topic 5?"
+- "Get the inferer score for allo1abc on topic 10"
+- "What pods are running for topic 15?"
 """
 )
 
