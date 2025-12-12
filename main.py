@@ -206,19 +206,15 @@ IMAGE_DIR.mkdir(parents=True, exist_ok=True)
 app.mount("/images", StaticFiles(directory=IMAGE_DIR), name="images")
 
 
-
-
-
 if __name__ == "__main__":
-    # env vars
-    os.environ["LLAMA_CLOUD_API_KEY"] = os.getenv("LLAMA_CLOUD_API_KEY")
-    os.environ["OPENAI_API_KEY"] = os.getenv("OPENAI_API_KEY")
-
-    # logging
     logging.basicConfig(
         level=logging.INFO,
         format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
     )
 
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=int(os.getenv("PORT", 8000)))
+    uvicorn.run(
+        app,
+        host=config.server.host,
+        port=config.server.port,
+    )
