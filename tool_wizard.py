@@ -17,11 +17,44 @@ from config import get_config
 
 logger = logging.getLogger("uvicorn.error")
 
+
+class WizardBackendUnavailableError(Exception):
+    """Raised when the wizard backend is not reachable."""
+    pass
+
+
 # Cached tools (loaded once per process, None means not attempted yet)
 _mcp_tools: Optional[List[BaseTool]] = None
 _mcp_load_attempted: bool = False
 # Keep MCP session alive for tool execution
 _mcp_session_context = None
+# Dynamic URL override (takes precedence over config when set)
+_wizard_url_override: Optional[str] = None
+
+
+def get_wizard_url() -> str:
+    """Get the current wizard backend URL (override or config)."""
+    if _wizard_url_override is not None:
+        return _wizard_url_override
+    return get_config().wizard.api_url
+
+
+async def set_wizard_url(url: str) -> None:
+    """
+    Update the wizard backend URL dynamically without restart.
+
+    Clears the cached tools so the next request will reconnect
+    to the new backend.
+
+    Args:
+        url: New wizard backend URL
+    """
+    global _wizard_url_override
+    _wizard_url_override = url
+    logger.info(f"Wizard URL updated to: {url}")
+
+    # Clear cached tools so next request reconnects to new URL
+    await clear_wizard_tools_cache()
 
 
 async def _check_wizard_backend_health(api_url: str, timeout: float = 5.0) -> bool:
@@ -56,8 +89,11 @@ async def create_wizard_tools(force_reload: bool = False) -> List[BaseTool]:
 
     The MCP server provides 50+ tools for interacting with the Allora wizard backend.
 
-    If the wizard backend is not reachable, returns an empty list but does NOT
-    cache the failure, allowing retry on subsequent calls.
+    Health check runs on every request:
+    - If backend is healthy and tools are cached, return cached tools
+    - If backend is healthy and tools are not cached, load them
+    - If backend is unhealthy and tools are cached, clear cache and return empty
+    - If backend is unhealthy and tools are not cached, return empty
 
     Environment:
         MCP_WIZARD_PACKAGE: npm package name (e.g., "allora-wizard-mcp")
@@ -72,10 +108,6 @@ async def create_wizard_tools(force_reload: bool = False) -> List[BaseTool]:
     """
     global _mcp_tools, _mcp_load_attempted
 
-    # Return cached tools if available and not forcing reload
-    if _mcp_tools is not None and not force_reload:
-        return _mcp_tools
-
     config = get_config()
 
     # Check if MCP is configured
@@ -83,15 +115,33 @@ async def create_wizard_tools(force_reload: bool = False) -> List[BaseTool]:
         logger.info("MCP_WIZARD_PACKAGE not set. Wizard tools unavailable.")
         return []
 
-    # Check if wizard backend is reachable before loading MCP tools
-    if not await _check_wizard_backend_health(config.wizard.api_url):
-        logger.warning(
-            f"Wizard backend not available at {config.wizard.api_url}. "
-            "Wizard tools will be unavailable for this request. "
-            "Will retry on next request."
+    # Get current wizard URL (may be dynamically overridden)
+    wizard_url = get_wizard_url()
+
+    # Always check if wizard backend is reachable (on every request)
+    backend_healthy = await _check_wizard_backend_health(wizard_url)
+
+    if not backend_healthy:
+        # Backend is down - clear cache if we have cached tools
+        if _mcp_tools is not None:
+            logger.warning(
+                f"Wizard backend became unavailable at {wizard_url}. "
+                "Clearing cached tools."
+            )
+            await clear_wizard_tools_cache()
+        else:
+            logger.warning(
+                f"Wizard backend not available at {wizard_url}. "
+                "Wizard tools will be unavailable for this request."
+            )
+        # Raise exception so caller can handle appropriately
+        raise WizardBackendUnavailableError(
+            f"Wizard backend not available at {wizard_url}"
         )
-        # Don't cache failure - allow retry on next request
-        return []
+
+    # Backend is healthy - return cached tools if available and not forcing reload
+    if _mcp_tools is not None and not force_reload:
+        return _mcp_tools
 
     try:
         from mcp import StdioServerParameters
@@ -103,11 +153,11 @@ async def create_wizard_tools(force_reload: bool = False) -> List[BaseTool]:
 
         package = config.wizard.mcp_package
         logger.info(f"Loading MCP tools from: {package}")
-        logger.info(f"MCP server will connect to wizard backend at: {config.wizard.api_url}")
+        logger.info(f"MCP server will connect to wizard backend at: {wizard_url}")
 
         # Create MCP server parameters with explicit environment
         # This ensures the subprocess receives WIZARD_API_URL
-        env = {**os.environ, "WIZARD_API_URL": config.wizard.api_url}
+        env = {**os.environ, "WIZARD_API_URL": wizard_url}
         server_params = StdioServerParameters(
             command="npx",
             args=[package],
@@ -150,17 +200,23 @@ async def create_wizard_tools(force_reload: bool = False) -> List[BaseTool]:
 
 
 async def clear_wizard_tools_cache():
-    """Clear the cached wizard tools, forcing reload on next call."""
+    """Clear the cached wizard tools, forcing reload on next call.
+
+    Note: MCP sessions use anyio cancel scopes which cannot be exited from
+    a different task than they were entered in. Instead of calling __aexit__,
+    we close the write stream to signal the subprocess to exit gracefully.
+    """
     global _mcp_tools, _mcp_load_attempted, _mcp_session_context
 
     # Cleanup existing session if any
     if _mcp_session_context is not None:
-        stdio_ctx, session_ctx, _, _ = _mcp_session_context
+        stdio_ctx, session_ctx, read_stream, write_stream = _mcp_session_context
         try:
-            await session_ctx.__aexit__(None, None, None)
-            await stdio_ctx.__aexit__(None, None, None)
+            # Close the write stream to signal EOF to the subprocess
+            # This is safer than __aexit__ which requires same-task context
+            await write_stream.aclose()
         except Exception as e:
-            logger.warning(f"Error cleaning up MCP session: {e}")
+            logger.debug(f"Error closing MCP write stream: {e}")
         _mcp_session_context = None
 
     _mcp_tools = None
