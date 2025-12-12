@@ -99,6 +99,53 @@ async def upload_file_to_slack(channel: str, file_path: str, title: str):
         raise
 
 
+def _split_text_for_slack(text: str, max_length: int) -> List[str]:
+    """
+    Split text into chunks that fit within Slack's block character limit.
+    Tries to split at paragraph boundaries, then sentence boundaries, then word boundaries.
+    """
+    if len(text) <= max_length:
+        return [text]
+
+    chunks = []
+    remaining = text
+
+    while remaining:
+        if len(remaining) <= max_length:
+            chunks.append(remaining)
+            break
+
+        # Find a good split point within max_length
+        split_point = max_length
+
+        # Try to split at paragraph boundary (double newline)
+        last_para = remaining.rfind('\n\n', 0, max_length)
+        if last_para > max_length // 2:  # Only use if it's past halfway
+            split_point = last_para + 2
+        else:
+            # Try to split at single newline
+            last_newline = remaining.rfind('\n', 0, max_length)
+            if last_newline > max_length // 2:
+                split_point = last_newline + 1
+            else:
+                # Try to split at sentence boundary
+                for punct in ['. ', '! ', '? ']:
+                    last_sent = remaining.rfind(punct, 0, max_length)
+                    if last_sent > max_length // 2:
+                        split_point = last_sent + 2
+                        break
+                else:
+                    # Fall back to word boundary
+                    last_space = remaining.rfind(' ', 0, max_length)
+                    if last_space > max_length // 2:
+                        split_point = last_space + 1
+
+        chunks.append(remaining[:split_point].rstrip())
+        remaining = remaining[split_point:].lstrip()
+
+    return chunks
+
+
 async def _send_slack_response(channel: str, text: str, thread_ts: Optional[str] = None, message_ts: Optional[str] = None, image_paths: list[str] = []):
     """Send response to Slack using Web API"""
     
@@ -127,13 +174,18 @@ async def _send_slack_response(channel: str, text: str, thread_ts: Optional[str]
     text = re.sub(r'## (.+)', r'*\1*', text)  # Convert ## headings to *bold*
     text = re.sub(r'# (.+)', r'*\1*', text)  # Convert # headings to *bold*
 
-    payload["blocks"].extend([{
-        "type": "section",
-        "text": {
-            "type": "mrkdwn",
-            "text": text,
-        },
-    }])
+    # Slack section blocks have a 3000 char limit - split long messages
+    MAX_BLOCK_LENGTH = 2900  # Leave some margin
+    text_chunks = _split_text_for_slack(text, MAX_BLOCK_LENGTH)
+
+    for chunk in text_chunks:
+        payload["blocks"].append({
+            "type": "section",
+            "text": {
+                "type": "mrkdwn",
+                "text": chunk,
+            },
+        })
     
     # Add fallback text for notifications
     payload["text"] = text[:150] + "..." if len(text) > 150 else text

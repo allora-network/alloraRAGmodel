@@ -96,8 +96,10 @@ async def create_wizard_tools(force_reload: bool = False) -> List[BaseTool]:
     - If backend is unhealthy and tools are not cached, return empty
 
     Environment:
-        MCP_WIZARD_PACKAGE: npm package name (e.g., "allora-wizard-mcp")
-                           Must be installed globally or npm-linked
+        MCP_WIZARD_PACKAGE: Either:
+            - Scoped npm package (e.g., "@allora-network/wizard-mcp") - uses npx
+            - Binary name (e.g., "allora-wizard-mcp") - runs directly
+            For production Docker, use the binary name (installed globally during build)
         WIZARD_API_URL: URL of the wizard backend
 
     Args:
@@ -158,9 +160,24 @@ async def create_wizard_tools(force_reload: bool = False) -> List[BaseTool]:
         # Create MCP server parameters with explicit environment
         # This ensures the subprocess receives WIZARD_API_URL
         env = {**os.environ, "WIZARD_API_URL": wizard_url}
+
+        # Determine how to run the MCP server:
+        # - If package starts with "@" (scoped npm package), use npx
+        # - Otherwise, assume it's a globally installed binary and run directly
+        if package.startswith("@"):
+            # Scoped package like @allora-network/wizard-mcp - use npx
+            command = "npx"
+            args = [package]
+            logger.info(f"Using npx to run scoped package: {package}")
+        else:
+            # Binary name like allora-wizard-mcp - run directly
+            command = package
+            args = []
+            logger.info(f"Running MCP server binary directly: {package}")
+
         server_params = StdioServerParameters(
-            command="npx",
-            args=[package],
+            command=command,
+            args=args,
             env=env,
         )
 

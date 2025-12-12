@@ -144,8 +144,12 @@ RAG System (FunctionAgent)
 ```bash
 # Required for wizard tools
 WIZARD_API_URL=http://localhost:3000              # Wizard backend URL
-MCP_WIZARD_PACKAGE=@allora-network/wizard-mcp     # npm package name (GitHub Packages)
-# For local dev: MCP_WIZARD_PACKAGE=allora-wizard-mcp
+
+# MCP package - two modes:
+# Production (Docker): binary name (installed globally during docker build)
+MCP_WIZARD_PACKAGE=allora-wizard-mcp
+# Development: scoped package (requires npm auth for GitHub Packages)
+# MCP_WIZARD_PACKAGE=@allora-network/wizard-mcp
 
 # Optional
 # WIZARD_API_KEY=your_api_key             # Only if wizard auth enabled
