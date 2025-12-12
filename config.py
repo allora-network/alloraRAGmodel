@@ -13,9 +13,9 @@ from exceptions import ConfigurationError
 class AgentConfig:
     """Configuration for the Allora RAG Agent"""
     # LLM Configuration
-    model: str = "gpt-4o"
+    model: str = "gpt-5.1"  # or "gpt-4o", "o3", etc.
     temperature: float = 0.3
-    max_tokens: int = 2000
+    max_tokens: int = 4096
     max_tokens_multiplier: int = 2  # For agent LLM (max_tokens * multiplier)
     
     # Memory Configuration
@@ -58,6 +58,16 @@ class SlackConfig:
 
 
 @dataclass
+class WizardConfig:
+    """Configuration for Wizard API tools via MCP"""
+    api_url: str = "http://localhost:3000"
+    timeout: float = 60.0
+    api_key: Optional[str] = None
+    # MCP server configuration (npm package)
+    mcp_package: Optional[str] = None  # e.g., "@alloralabs/wizard-mcp" or local path
+
+
+@dataclass
 class ServerConfig:
     """Configuration for FastAPI server"""
     # Server Settings
@@ -91,7 +101,8 @@ class Config:
     chart: ChartConfig
     slack: SlackConfig
     server: ServerConfig
-    
+    wizard: WizardConfig
+
     # Environment Variables (required)
     llama_cloud_api_key: str
     llama_cloud_org_id: str
@@ -130,8 +141,9 @@ class Config:
         
         # Create subsystem configurations with environment overrides
         agent_config = AgentConfig(
+            model=os.getenv('AGENT_MODEL', 'gpt-5.1'),
             temperature=float(os.getenv('AGENT_TEMPERATURE', '0.3')),
-            max_tokens=int(os.getenv('AGENT_MAX_TOKENS', '2000')),
+            max_tokens=int(os.getenv('AGENT_MAX_TOKENS', '4096')),
             max_tokens_multiplier=int(os.getenv('AGENT_MAX_TOKENS_MULTIPLIER', '2')),
             memory_token_limit=int(os.getenv('AGENT_MEMORY_TOKEN_LIMIT', '8000')),
             reuse_client=os.getenv('AGENT_REUSE_CLIENT', 'true').lower() == 'true',
@@ -161,13 +173,21 @@ class Config:
             allowed_origins=os.getenv('ALLOWED_ORIGINS', 'http://localhost:3000,http://localhost:8000').split(','),
             requests_per_minute=int(os.getenv('REQUESTS_PER_MINUTE', '60'))
         )
-        
+
+        wizard_config = WizardConfig(
+            api_url=os.getenv('WIZARD_API_URL', 'http://localhost:3000'),
+            timeout=float(os.getenv('WIZARD_TIMEOUT', '60.0')),
+            api_key=os.getenv('WIZARD_API_KEY'),
+            mcp_package=os.getenv('MCP_WIZARD_PACKAGE'),  # e.g., "@alloralabs/wizard-mcp"
+        )
+
         return cls(
             agent=agent_config,
             rag=rag_config,
             chart=chart_config,
             slack=slack_config,
             server=server_config,
+            wizard=wizard_config,
             **env_values
         )
     

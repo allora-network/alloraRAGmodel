@@ -18,6 +18,7 @@ from exceptions import AlloraAgentError, SlackIntegrationError
 from config import get_config
 from slack_types import SlackRequest, SlackVerificationRequest, parse_slack_request
 from utils import pretty_print
+from tool_wizard import WizardBackendUnavailableError, set_wizard_url, get_wizard_url
 
 logger = logging.getLogger("uvicorn.error") # -> debugging purposes
 
@@ -83,6 +84,38 @@ async def root():
     return "ok"
 
 
+# ── Admin endpoints ──────────────────────────────────────────────────────
+class WizardUrlRequest(BaseModel):
+    url: str
+
+
+@app.get("/admin/wizard-url")
+async def get_wizard_url_endpoint(request: Request):
+    """Get the current wizard backend URL."""
+    api_key = request.headers.get("X-API-Key") or request.headers.get("Authorization", "").replace("Bearer ", "")
+    if config.wizard.api_key and api_key != config.wizard.api_key:
+        return JSONResponse(status_code=401, content={"error": "Unauthorized"})
+
+    return {"url": get_wizard_url()}
+
+
+@app.post("/admin/wizard-url")
+async def set_wizard_url_endpoint(request: Request, req: WizardUrlRequest):
+    """
+    Update the wizard backend URL dynamically without restart.
+
+    Requires X-API-Key header matching WIZARD_API_KEY.
+    """
+    api_key = request.headers.get("X-API-Key") or request.headers.get("Authorization", "").replace("Bearer ", "")
+    if config.wizard.api_key and api_key != config.wizard.api_key:
+        return JSONResponse(status_code=401, content={"error": "Unauthorized"})
+
+    await set_wizard_url(req.url)
+    logger.info(f"Admin: Wizard URL updated to {req.url}")
+
+    return {"message": "Wizard URL updated", "url": req.url}
+
+
 # ── Raw chat endpoint ──────────────────────────────────────────────────────
 @app.post("/chat")
 async def chat_endpoint(request: Request, req: ChatRequest):
@@ -97,7 +130,7 @@ async def chat_endpoint(request: Request, req: ChatRequest):
         if not session_id:
             raise Exception('no session id')
 
-        docs_agent = Agent(
+        docs_agent = await Agent.create(
             session_id=session_id,
             index_names=["alloradocs", "allora_production"],
             max_tokens=16384,
@@ -116,6 +149,12 @@ async def chat_endpoint(request: Request, req: ChatRequest):
             "request_id": str(request_id)
         }
     
+    except WizardBackendUnavailableError as e:
+        logger.warning(f"[{request_id}] Wizard backend unavailable: {str(e)}")
+        return {
+            "error": "The wizard backend is currently unavailable. Please try again later or contact @Clément.",
+            "request_id": str(request_id)
+        }
     except AlloraAgentError as e:
         logger.error(f"[{request_id}] Agent error: {str(e)}")
         return {"error": "I encountered an issue processing your request. Please try again.", "request_id": str(request_id)}
@@ -164,20 +203,28 @@ async def slack_endpoint(request: Request):
             index_names = ["enablement", "alloradocs", "allora_production"]
             max_tokens = 16384
 
-            slack_agent = agents.get(slack_request.session_id())
-            if slack_agent is None:
-                slack_agent = Agent(
-                    session_id=slack_request.session_id(),
-                    index_names=index_names,
-                    max_tokens=max_tokens,
-                )
-                agents[slack_request.session_id()] = slack_agent
-
-
             async def respond():
-                answer, sources, image_paths = await slack_agent.answer_allora_query(1, slack_request.clean_text)
-                await send_slack_response(slack_request, answer, sources, image_paths)
-                logger.info("sent slack response")
+                try:
+                    slack_agent = agents.get(slack_request.session_id())
+                    if slack_agent is None:
+                        slack_agent = await Agent.create(
+                            session_id=slack_request.session_id(),
+                            index_names=index_names,
+                            max_tokens=max_tokens,
+                        )
+                        agents[slack_request.session_id()] = slack_agent
+
+                    answer, sources, image_paths = await slack_agent.answer_allora_query(1, slack_request.clean_text)
+                    await send_slack_response(slack_request, answer, sources, image_paths)
+                    logger.info("sent slack response")
+                except WizardBackendUnavailableError:
+                    await send_slack_response(
+                        slack_request,
+                        "The wizard backend is currently unavailable. Please try again later or contact @Clément.",
+                        [],
+                        []
+                    )
+                    logger.warning("Wizard backend unavailable - sent error response to Slack")
 
             asyncio.create_task(respond())
 
@@ -206,19 +253,15 @@ IMAGE_DIR.mkdir(parents=True, exist_ok=True)
 app.mount("/images", StaticFiles(directory=IMAGE_DIR), name="images")
 
 
-
-
-
 if __name__ == "__main__":
-    # env vars
-    os.environ["LLAMA_CLOUD_API_KEY"] = os.getenv("LLAMA_CLOUD_API_KEY")
-    os.environ["OPENAI_API_KEY"] = os.getenv("OPENAI_API_KEY")
-
-    # logging
     logging.basicConfig(
         level=logging.INFO,
         format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
     )
 
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=int(os.getenv("PORT", 8000)))
+    uvicorn.run(
+        app,
+        host=config.server.host,
+        port=config.server.port,
+    )
