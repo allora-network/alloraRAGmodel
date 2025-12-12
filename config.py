@@ -59,10 +59,12 @@ class SlackConfig:
 
 @dataclass
 class WizardConfig:
-    """Configuration for Wizard API tools"""
+    """Configuration for Wizard API tools via MCP"""
     api_url: str = "http://localhost:3000"
     timeout: float = 60.0
     api_key: Optional[str] = None
+    # MCP server configuration (npm package)
+    mcp_package: Optional[str] = None  # e.g., "@alloralabs/wizard-mcp" or local path
 
 
 @dataclass
@@ -175,7 +177,8 @@ class Config:
         wizard_config = WizardConfig(
             api_url=os.getenv('WIZARD_API_URL', 'http://localhost:3000'),
             timeout=float(os.getenv('WIZARD_TIMEOUT', '60.0')),
-            api_key=os.getenv('WIZARD_API_KEY')
+            api_key=os.getenv('WIZARD_API_KEY'),
+            mcp_package=os.getenv('MCP_WIZARD_PACKAGE'),  # e.g., "@alloralabs/wizard-mcp"
         )
 
         return cls(

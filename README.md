@@ -125,6 +125,44 @@ For this particular example, you should expect an output similar to:
 Message:  Allora's reward distribution is differentiated and based on a carefully designed incentive mechanism that aligns with the interests of the network and allows for continual learning and improvement.  
 Sources: ['/markdown_files4/pages/devs/reference/module-accounts.mdx', '/markdown_files4/pages/home/overview.mdx']*
 
+## Wizard Tools (MCP Integration)
+
+The RAG system integrates with the Allora Topic Wizard via MCP (Model Context Protocol). This provides 43+ tools for blockchain queries, topic management, and infrastructure operations.
+
+### Architecture
+
+```
+RAG System (FunctionAgent)
+    │
+    └── spawns ──► MCP Server (allora-wizard-mcp)
+                       │
+                       └── connects to ──► Wizard Backend API
+```
+
+### Environment Variables
+
+```bash
+# Required for wizard tools
+WIZARD_API_URL=http://localhost:3000              # Wizard backend URL
+MCP_WIZARD_PACKAGE=@allora-network/wizard-mcp     # npm package name (GitHub Packages)
+# For local dev: MCP_WIZARD_PACKAGE=allora-wizard-mcp
+
+# Optional
+# WIZARD_API_KEY=your_api_key             # Only if wizard auth enabled
+```
+
+### Available Tools
+
+The MCP server provides tools for:
+- **Topic queries**: `get_topic`, `topic_exists`, `is_topic_active`, `get_topic_stake`
+- **Whitelist management**: `is_worker_whitelisted`, `whitelist_workers`, `whitelist_reputers`
+- **Infrastructure**: `get_k8s_deployments`, `get_osm_config`, `get_osm_wallets`
+- **Scores & metrics**: `get_inferer_score`, `get_forecaster_score`, `get_reputer_score`
+
+Run the server and check logs to see all 43+ available tools.
+
+---
+
 ## Future Updates
 
 When new data is added, update this document to keep track of changes and ensure the knowledge context remains current.

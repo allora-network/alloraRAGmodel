@@ -18,7 +18,7 @@ from sysprompt import default_system_prompt
 from tool_chart import chart_tool
 from tool_openai_image import image_tool
 from tool_rag import create_rag_tools
-from tool_wizard import create_wizard_tools
+from tool_wizard import create_wizard_tools  # Now async
 from exceptions import RAGQueryError, ToolExecutionError
 from config import get_config
 
@@ -29,22 +29,19 @@ class Agent:
     def __init__(
         self,
         session_id: str,
-        index_names: List[str],
+        tools: List[BaseTool],
         sysprompt: str = default_system_prompt,
         max_tokens: Optional[int] = None,
         logger: logging.Logger = logging.getLogger("uvicorn.error"),
     ):
+        """
+        Initialize agent with pre-loaded tools.
+
+        Use Agent.create() factory method for async tool loading.
+        """
         self.logger = logger
-        
-        # Get configuration
         config = get_config()
-        
-        tools: list[BaseTool] = []
-        tools.extend(create_rag_tools(index_names=index_names, max_tokens=config.rag.max_tokens))
-        tools.append(image_tool)
-        tools.append(chart_tool)
-        tools.extend(create_wizard_tools())
-        
+
         # Create the LLM
         self.llm = OpenAIResponses(
             built_in_tools=[{"type": "web_search_preview"}],
@@ -60,7 +57,7 @@ class Agent:
             token_limit=config.agent.memory_token_limit,
         )
 
-        # Create the function calling agent (new API - direct instantiation)
+        # Create the function calling agent
         self.agent = FunctionAgent(
             name="AlloraAssistant",
             description="An AI assistant for Allora Network queries",
@@ -68,8 +65,47 @@ class Agent:
             llm=self.llm,
             system_prompt=sysprompt,
         )
-        
+
         self.logger.info(f"Agent initialized with {len(tools)} tools")
+
+    @classmethod
+    async def create(
+        cls,
+        session_id: str,
+        index_names: List[str],
+        sysprompt: str = default_system_prompt,
+        max_tokens: Optional[int] = None,
+        logger: logging.Logger = logging.getLogger("uvicorn.error"),
+    ) -> "Agent":
+        """
+        Factory method for creating Agent with async tool loading.
+
+        Args:
+            session_id: Unique session identifier for memory
+            index_names: List of RAG index names to query
+            sysprompt: System prompt for the agent
+            max_tokens: Max tokens for LLM responses
+            logger: Logger instance
+
+        Returns:
+            Initialized Agent instance
+        """
+        config = get_config()
+
+        # Build tools list (wizard tools are async)
+        tools: list[BaseTool] = []
+        tools.extend(create_rag_tools(index_names=index_names, max_tokens=config.rag.max_tokens))
+        tools.append(image_tool)
+        tools.append(chart_tool)
+        tools.extend(await create_wizard_tools())  # Async MCP tool loading
+
+        return cls(
+            session_id=session_id,
+            tools=tools,
+            sysprompt=sysprompt,
+            max_tokens=max_tokens,
+            logger=logger,
+        )
 
     async def answer_allora_query(self, request_id: int, message: str) -> Tuple[str, List[str], List[str]]:
         """Answer query using FunctionAgent with source extraction and chart generation

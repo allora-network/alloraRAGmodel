@@ -97,7 +97,7 @@ async def chat_endpoint(request: Request, req: ChatRequest):
         if not session_id:
             raise Exception('no session id')
 
-        docs_agent = Agent(
+        docs_agent = await Agent.create(
             session_id=session_id,
             index_names=["alloradocs", "allora_production"],
             max_tokens=16384,
@@ -166,7 +166,7 @@ async def slack_endpoint(request: Request):
 
             slack_agent = agents.get(slack_request.session_id())
             if slack_agent is None:
-                slack_agent = Agent(
+                slack_agent = await Agent.create(
                     session_id=slack_request.session_id(),
                     index_names=index_names,
                     max_tokens=max_tokens,
