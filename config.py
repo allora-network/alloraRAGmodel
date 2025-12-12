@@ -13,7 +13,7 @@ from exceptions import ConfigurationError
 class AgentConfig:
     """Configuration for the Allora RAG Agent"""
     # LLM Configuration
-    model: str = "gpt-5.2"  # or "gpt-5.1", "gpt-4o", etc.
+    model: str = "gpt-5.1"  # or "gpt-4o", "o3", etc.
     temperature: float = 0.3
     max_tokens: int = 4096
     max_tokens_multiplier: int = 2  # For agent LLM (max_tokens * multiplier)
@@ -63,9 +63,6 @@ class WizardConfig:
     api_url: str = "http://localhost:3000"
     timeout: float = 60.0
     api_key: Optional[str] = None
-    # Anthropic config for wizard tool reasoning
-    anthropic_api_key: Optional[str] = None
-    anthropic_model: str = "claude-opus-4-5-20251101"
 
 
 @dataclass
@@ -142,7 +139,7 @@ class Config:
         
         # Create subsystem configurations with environment overrides
         agent_config = AgentConfig(
-            model=os.getenv('AGENT_MODEL', 'gpt-5.2'),
+            model=os.getenv('AGENT_MODEL', 'gpt-5.1'),
             temperature=float(os.getenv('AGENT_TEMPERATURE', '0.3')),
             max_tokens=int(os.getenv('AGENT_MAX_TOKENS', '4096')),
             max_tokens_multiplier=int(os.getenv('AGENT_MAX_TOKENS_MULTIPLIER', '2')),
@@ -178,9 +175,7 @@ class Config:
         wizard_config = WizardConfig(
             api_url=os.getenv('WIZARD_API_URL', 'http://localhost:3000'),
             timeout=float(os.getenv('WIZARD_TIMEOUT', '60.0')),
-            api_key=os.getenv('WIZARD_API_KEY'),
-            anthropic_api_key=os.getenv('ANTHROPIC_API_KEY'),
-            anthropic_model=os.getenv('WIZARD_ANTHROPIC_MODEL', 'claude-opus-4-5-20251101')
+            api_key=os.getenv('WIZARD_API_KEY')
         )
 
         return cls(
