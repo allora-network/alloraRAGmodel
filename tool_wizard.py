@@ -136,10 +136,8 @@ async def create_wizard_tools(force_reload: bool = False) -> List[BaseTool]:
                 f"Wizard backend not available at {wizard_url}. "
                 "Wizard tools will be unavailable for this request."
             )
-        # Raise exception so caller can handle appropriately
-        raise WizardBackendUnavailableError(
-            f"Wizard backend not available at {wizard_url}"
-        )
+        # Return empty list - agent will continue with RAG tools only
+        return []
 
     # Backend is healthy - return cached tools if available and not forcing reload
     if _mcp_tools is not None and not force_reload:
