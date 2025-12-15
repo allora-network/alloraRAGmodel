@@ -142,7 +142,7 @@ class Agent:
 
     def _extract_response_text(self, response, request_id: int) -> str:
         """Extract response text with robust fallback logic"""
-        
+
         # Try multiple potential response attributes in order of preference
         potential_attributes = [
             'response',      # Standard LlamaIndex response
@@ -151,7 +151,7 @@ class Agent:
             'message',       # Message-based response
             'output',        # Output-based response
         ]
-        
+
         for attr in potential_attributes:
             try:
                 if hasattr(response, attr):
@@ -160,23 +160,39 @@ class Agent:
                         text = str(value).strip()
                         if text and text != "None":
                             self.logger.debug(f"[{request_id}] Extracted response from '{attr}' attribute")
-                            return text
+                            return self._clean_response_text(text)
             except Exception as e:
                 self.logger.debug(f"[{request_id}] Error accessing attribute '{attr}': {str(e)}")
                 continue
-        
+
         # If no standard attributes work, try to convert the whole response
         try:
             response_str = str(response).strip()
             if response_str and response_str != "None" and not response_str.startswith("<"):
                 self.logger.warning(f"[{request_id}] Using fallback string conversion of response")
-                return response_str
+                return self._clean_response_text(response_str)
         except Exception as e:
             self.logger.debug(f"[{request_id}] Error with fallback string conversion: {str(e)}")
-        
+
         # Ultimate fallback
         self.logger.error(f"[{request_id}] Could not extract response text from any attribute")
         return "I apologize, but I couldn't generate a proper response. Please try again."
+
+    def _clean_response_text(self, text: str) -> str:
+        """Clean up response text by removing role prefixes and other artifacts"""
+        # Remove common role prefixes that LLM agents sometimes include
+        prefixes_to_remove = [
+            "assistant: ",
+            "Assistant: ",
+            "ASSISTANT: ",
+            "assistant:",
+            "Assistant:",
+        ]
+        for prefix in prefixes_to_remove:
+            if text.startswith(prefix):
+                text = text[len(prefix):]
+                break
+        return text.strip()
 
     def _extract_images_from_response(self, response) -> list[str]:
         """Extract image URLs and file paths from agent tool call results"""

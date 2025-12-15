@@ -96,8 +96,10 @@ async def create_wizard_tools(force_reload: bool = False) -> List[BaseTool]:
     - If backend is unhealthy and tools are not cached, return empty
 
     Environment:
-        MCP_WIZARD_PACKAGE: npm package name (e.g., "allora-wizard-mcp")
-                           Must be installed globally or npm-linked
+        MCP_WIZARD_PACKAGE: Either:
+            - Scoped npm package (e.g., "@allora-network/wizard-mcp") - uses npx
+            - Binary name (e.g., "allora-wizard-mcp") - runs directly
+            For production Docker, use the binary name (installed globally during build)
         WIZARD_API_URL: URL of the wizard backend
 
     Args:
@@ -158,9 +160,24 @@ async def create_wizard_tools(force_reload: bool = False) -> List[BaseTool]:
         # Create MCP server parameters with explicit environment
         # This ensures the subprocess receives WIZARD_API_URL
         env = {**os.environ, "WIZARD_API_URL": wizard_url}
+
+        # Determine how to run the MCP server:
+        # - If package starts with "@" (scoped npm package), use npx
+        # - Otherwise, assume it's a globally installed binary and run directly
+        if package.startswith("@"):
+            # Scoped package like @allora-network/wizard-mcp - use npx
+            command = "npx"
+            args = [package]
+            logger.info(f"Using npx to run scoped package: {package}")
+        else:
+            # Binary name like allora-wizard-mcp - run directly
+            command = package
+            args = []
+            logger.info(f"Running MCP server binary directly: {package}")
+
         server_params = StdioServerParameters(
-            command="npx",
-            args=[package],
+            command=command,
+            args=args,
             env=env,
         )
 
@@ -203,20 +220,18 @@ async def clear_wizard_tools_cache():
     """Clear the cached wizard tools, forcing reload on next call.
 
     Note: MCP sessions use anyio cancel scopes which cannot be exited from
-    a different task than they were entered in. Instead of calling __aexit__,
-    we close the write stream to signal the subprocess to exit gracefully.
+    a different task than they were entered in. We simply abandon the session
+    and let the subprocess terminate naturally - any cleanup attempt from a
+    different task will cause RuntimeError. The subprocess will exit when it
+    detects the broken pipe or when the process is garbage collected.
     """
     global _mcp_tools, _mcp_load_attempted, _mcp_session_context
 
-    # Cleanup existing session if any
+    # Simply abandon the session without attempting cleanup
+    # Attempting to close streams or call __aexit__ from a different task
+    # will cause "Attempted to exit cancel scope in a different task" error
     if _mcp_session_context is not None:
-        stdio_ctx, session_ctx, read_stream, write_stream = _mcp_session_context
-        try:
-            # Close the write stream to signal EOF to the subprocess
-            # This is safer than __aexit__ which requires same-task context
-            await write_stream.aclose()
-        except Exception as e:
-            logger.debug(f"Error closing MCP write stream: {e}")
+        logger.debug("Abandoning MCP session (will be cleaned up by subprocess)")
         _mcp_session_context = None
 
     _mcp_tools = None
