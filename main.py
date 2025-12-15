@@ -18,9 +18,24 @@ from exceptions import AlloraAgentError, SlackIntegrationError
 from config import get_config
 from slack_types import SlackRequest, SlackVerificationRequest, parse_slack_request
 from utils import pretty_print
-from tool_wizard import WizardBackendUnavailableError, set_wizard_url, get_wizard_url
+from tool_wizard import set_wizard_url, get_wizard_url
 
 logger = logging.getLogger("uvicorn.error") # -> debugging purposes
+
+
+# Filter to suppress health check access logs
+class HealthCheckFilter(logging.Filter):
+    """Filter out health check requests from uvicorn access logs."""
+    def filter(self, record: logging.LogRecord) -> bool:
+        message = record.getMessage()
+        # Filter out GET / requests (health checks)
+        if 'GET / HTTP' in message or 'GET /health HTTP' in message:
+            return False
+        return True
+
+
+# Apply filter to uvicorn access logger
+logging.getLogger("uvicorn.access").addFilter(HealthCheckFilter())
 
 SESSION_COOKIE_NAME = 'session_id'
 
@@ -80,7 +95,7 @@ async def ensure_session_id(request: Request, call_next):
 # ── Health Check ──────────────────────────────────────────────────────
 @app.get("/")
 async def root():
-    logger.info(f"/ (health check)")
+    # No logging for health checks to reduce noise
     return "ok"
 
 
@@ -149,12 +164,6 @@ async def chat_endpoint(request: Request, req: ChatRequest):
             "request_id": str(request_id)
         }
     
-    except WizardBackendUnavailableError as e:
-        logger.warning(f"[{request_id}] Wizard backend unavailable: {str(e)}")
-        return {
-            "error": "The wizard backend is currently unavailable. Please try again later or contact @Clément.",
-            "request_id": str(request_id)
-        }
     except AlloraAgentError as e:
         logger.error(f"[{request_id}] Agent error: {str(e)}")
         return {"error": "I encountered an issue processing your request. Please try again.", "request_id": str(request_id)}
@@ -217,14 +226,14 @@ async def slack_endpoint(request: Request):
                     answer, sources, image_paths = await slack_agent.answer_allora_query(1, slack_request.clean_text)
                     await send_slack_response(slack_request, answer, sources, image_paths)
                     logger.info("sent slack response")
-                except WizardBackendUnavailableError:
+                except Exception as e:
+                    logger.error(f"Error processing Slack message: {str(e)}")
                     await send_slack_response(
                         slack_request,
-                        "The wizard backend is currently unavailable. Please try again later or contact @Clément.",
+                        f"Sorry, I encountered an error processing your request. Please try again later.\n```{str(e)}```",
                         [],
                         []
                     )
-                    logger.warning("Wizard backend unavailable - sent error response to Slack")
 
             asyncio.create_task(respond())
 
@@ -259,9 +268,50 @@ if __name__ == "__main__":
         format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
     )
 
+    # Configure uvicorn logging to filter health checks
+    log_config = {
+        "version": 1,
+        "disable_existing_loggers": False,
+        "filters": {
+            "health_check_filter": {
+                "()": "main.HealthCheckFilter",
+            }
+        },
+        "formatters": {
+            "default": {
+                "()": "uvicorn.logging.DefaultFormatter",
+                "fmt": "%(levelprefix)s %(message)s",
+                "use_colors": None,
+            },
+            "access": {
+                "()": "uvicorn.logging.AccessFormatter",
+                "fmt": '%(levelprefix)s %(client_addr)s - "%(request_line)s" %(status_code)s',
+            },
+        },
+        "handlers": {
+            "default": {
+                "formatter": "default",
+                "class": "logging.StreamHandler",
+                "stream": "ext://sys.stderr",
+            },
+            "access": {
+                "formatter": "access",
+                "class": "logging.StreamHandler",
+                "stream": "ext://sys.stdout",
+                "filters": ["health_check_filter"],
+            },
+        },
+        "loggers": {
+            "uvicorn": {"handlers": ["default"], "level": "INFO", "propagate": False},
+            "uvicorn.error": {"level": "INFO"},
+            "uvicorn.access": {"handlers": ["access"], "level": "INFO", "propagate": False},
+        },
+    }
+
     import uvicorn
     uvicorn.run(
         app,
         host=config.server.host,
         port=config.server.port,
+        log_config=log_config,
     )
